@@ -3,7 +3,6 @@
 import { ChevronDown, CornerRightUp, Paperclip, Pause, X } from "lucide-react";
 import { ReactNode, useMemo, useState, useRef, useEffect } from "react";
 import { Button } from "ui/button";
-import { notImplementedToast } from "ui/shared-toast";
 import { PastesContentCard } from "./pasts-content";
 import { UseChatHelpers } from "@ai-sdk/react";
 import { SelectModel } from "./select-model";

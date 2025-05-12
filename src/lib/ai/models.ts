@@ -5,14 +5,26 @@ import { anthropic } from "@ai-sdk/anthropic";
 import { xai } from "@ai-sdk/xai";
 import { LanguageModel, wrapLanguageModel } from "ai";
 import { gemmaToolMiddleware } from "@ai-sdk-tool/parser";
+import { createAzure } from '@ai-sdk/azure';
+
+export const azure = createAzure({
+  resourceName: process.env.AZURE_OPENAI_RESOURCE_NAME,
+  apiKey: process.env.AZURE_OPENAI_API_KEY,
+});
 
 export const allModels = {
+  azure: {
+    "4.1": azure("gpt-4.1"),
+    "4o": azure("gpt-4o"),
+    "o4-mini": azure("o4-mini"),
+  },
   openai: {
-    "4o-mini": openai("gpt-4o-mini", {}),
     "gpt-4.1": openai("gpt-4.1"),
     "gpt-4.1-mini": openai("gpt-4.1-mini"),
-    "4o": openai("gpt-4o"),
-    "o4-mini": openai("o4-mini", {
+    "gpt-4o": openai("gpt-4o"),
+    "gpt-4o-mini": openai("gpt-4o-mini"),
+    "gpt-o3-mini": openai("o3-mini"),
+    "gpt-o4-mini": openai("o4-mini", {
       reasoningEffort: "medium",
     }),
   },
@@ -47,7 +59,9 @@ export const allModels = {
 
 export const isToolCallUnsupportedModel = (model: LanguageModel) => {
   return [
-    allModels.openai["o4-mini"],
+    allModels.azure["o4-mini"],
+    allModels.openai["gpt-o4-mini"],
+    allModels.openai["gpt-o3-mini"],
     allModels.google["gemini-2.0-thinking"],
     allModels.xai["grok-3"],
     allModels.xai["grok-3-mini"],
@@ -56,9 +70,9 @@ export const isToolCallUnsupportedModel = (model: LanguageModel) => {
   ].includes(model);
 };
 
-export const DEFAULT_MODEL = "gpt-4.1-mini";
+export const DEFAULT_MODEL = "4.1";
 
-const fallbackModel = allModels.openai[DEFAULT_MODEL];
+const fallbackModel = allModels.azure[DEFAULT_MODEL];
 
 export const customModelProvider = {
   modelsInfo: Object.keys(allModels).map((provider) => {
