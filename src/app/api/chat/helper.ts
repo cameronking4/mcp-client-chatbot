@@ -4,7 +4,7 @@ import {
   ChatMessageAnnotation,
   ToolInvocationUIPart,
 } from "app-types/chat";
-import { MCPServerBindingConfig } from "app-types/mcp";
+import type { MCPServerBindingConfig } from "app-types/mcp";
 import { extractMCPToolId } from "lib/ai/mcp/mcp-tool-id";
 import { errorToString, objectFlow, toAny } from "lib/utils";
 import { callMcpToolAction } from "../mcp/actions";

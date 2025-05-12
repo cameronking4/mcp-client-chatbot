@@ -1,5 +1,5 @@
 import { existsSync, writeFileSync } from "fs";
-import { MCP_CONFIG_PATH } from "lib/const";
+import { MCP_CONFIG_PATH } from "lib/ai/mcp/config-path";
 
 const DEFAULT_CONFIG = {
   playwright: {

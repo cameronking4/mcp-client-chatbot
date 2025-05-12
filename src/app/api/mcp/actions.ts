@@ -1,5 +1,4 @@
 "use server";
-
 import type { MCPServerConfig } from "app-types/mcp";
 import { mcpClientsManager } from "lib/ai/mcp/mcp-manager";
 import { isMaybeMCPServerConfig } from "lib/ai/mcp/is-mcp-config";

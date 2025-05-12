@@ -10,7 +10,7 @@ import type { FSWatcher } from "chokidar";
 import { createDebounce } from "lib/utils";
 import equal from "fast-deep-equal";
 import logger from "logger";
-import { MCP_CONFIG_PATH } from "lib/const";
+import { MCP_CONFIG_PATH } from "lib/ai/mcp/config-path";
 
 /**
  * Creates a file-based implementation of MCPServerStorage
