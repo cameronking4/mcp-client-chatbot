@@ -1,5 +1,5 @@
 import Link from "next/link";
-import React, { memo, PropsWithChildren, ReactElement, ReactNode } from "react";
+import React, { memo, PropsWithChildren, ReactElement } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import { PreBlock } from "./pre-block";
 import { isJson, isString, toAny } from "lib/utils";

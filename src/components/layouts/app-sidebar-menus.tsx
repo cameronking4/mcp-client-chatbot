@@ -7,7 +7,7 @@ import { cn } from "lib/utils";
 import { SidebarGroup } from "ui/sidebar";
 import { TooltipProvider } from "ui/tooltip";
 import Link from "next/link";
-import { Library, MessageCircleDashed, MessageCirclePlus, Server } from "lucide-react";
+import { Library, MessageCirclePlus, Server } from "lucide-react";
 
 export function AppSidebarMenus({ isOpen }: { isOpen: boolean }) {
   return (
