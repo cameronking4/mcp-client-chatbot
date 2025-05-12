@@ -12,6 +12,9 @@ import equal from "fast-deep-equal";
 import logger from "logger";
 import { MCP_CONFIG_PATH } from "lib/ai/mcp/config-path";
 
+// Check if we're in a read-only filesystem environment (like Vercel serverless)
+const isReadOnlyFilesystem = process.env.NODE_ENV === "production" || process.env.IS_SERVERLESS === "true";
+
 /**
  * Creates a file-based implementation of MCPServerStorage
  */
@@ -27,13 +30,28 @@ export function createFileBasedMCPConfigsStorage(
    * Persists the current config map to the file system
    */
   async function saveToFile(): Promise<void> {
-    const dir = dirname(configPath);
-    await mkdir(dir, { recursive: true });
-    await writeFile(
-      configPath,
-      JSON.stringify(Object.fromEntries(configs), null, 2),
-      "utf-8",
-    );
+    // Skip file writing in read-only environments
+    if (isReadOnlyFilesystem) {
+      logger.debug("Skipping MCP config file write in read-only environment");
+      return;
+    }
+
+    try {
+      const dir = dirname(configPath);
+      await mkdir(dir, { recursive: true });
+      await writeFile(
+        configPath,
+        JSON.stringify(Object.fromEntries(configs), null, 2),
+        "utf-8",
+      );
+    } catch (error: any) {
+      // Don't throw if error is related to read-only filesystem
+      if (error.code === 'EROFS') {
+        logger.warn("Skipping MCP config file write due to read-only filesystem");
+        return;
+      }
+      throw error;
+    }
   }
   /**
    * Initializes storage by reading existing config or creating empty file
@@ -55,45 +73,54 @@ export function createFileBasedMCPConfigsStorage(
     } catch (err: any) {
       if (err.code === "ENOENT") {
         // Create empty config file if doesn't exist
-        await saveToFile();
+        // Skip in read-only environments
+        if (!isReadOnlyFilesystem) {
+          await saveToFile();
+        }
       } else if (err instanceof SyntaxError) {
         throw new Error(
           `Config file ${configPath} has invalid JSON: ${err.message}`,
         );
+      } else if (err.code === "EROFS") {
+        // Read-only filesystem, proceed with empty config
+        logger.warn("Skipping MCP config file read due to read-only filesystem");
       } else {
         throw err;
       }
     }
 
-    // Setup file watcher
-    watcher = chokidar.watch(configPath, {
-      persistent: true,
-      awaitWriteFinish: true,
-      ignoreInitial: true,
-    });
+    // Only set up file watcher in non-read-only environments
+    if (!isReadOnlyFilesystem) {
+      // Setup file watcher
+      watcher = chokidar.watch(configPath, {
+        persistent: true,
+        awaitWriteFinish: true,
+        ignoreInitial: true,
+      });
 
-    watcher.on("change", () =>
-      debounce(async () => {
-        {
-          try {
-            // Read the updated file
-            const configText = await readFile(configPath, {
-              encoding: "utf-8",
-            });
-            if (
-              equal(JSON.parse(configText ?? "{}"), Object.fromEntries(configs))
-            ) {
-              return;
+      watcher.on("change", () =>
+        debounce(async () => {
+          {
+            try {
+              // Read the updated file
+              const configText = await readFile(configPath, {
+                encoding: "utf-8",
+              });
+              if (
+                equal(JSON.parse(configText ?? "{}"), Object.fromEntries(configs))
+              ) {
+                return;
+              }
+
+              await manager.cleanup();
+              await manager.init();
+            } catch (err) {
+              logger.error("Error detecting config file change:", err);
             }
-
-            await manager.cleanup();
-            await manager.init();
-          } catch (err) {
-            logger.error("Error detecting config file change:", err);
           }
-        }
-      }, 1000),
-    );
+        }, 1000),
+      );
+    }
   }
 
   return {
