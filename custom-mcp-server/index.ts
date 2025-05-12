@@ -1041,9 +1041,24 @@ server.resource(
         sizeFormatted: formatFileSize(file.size),
         createdAt: file.createdAt,
         updatedAt: file.updatedAt,
-        // Add direct access URI for convenience
-        uri: `project://${projectId}/file/${file.id}`
+        // Add direct access URIs for convenience
+        uri: `project://${projectId}/file/${file.id}`,
+        nameBasedUri: `project://${projectId}/filename/${file.name}`
       }));
+      
+      // Get file names as a separate list for easier access
+      const fileNames = files.map(file => file.name);
+      
+      // Provide helpful usage examples based on search results
+      const usageExamples: string[] = [];
+      
+      if (files.length > 0) {
+        usageExamples.push(
+          `To view a specific file by ID: project://${projectId}/file/${files[0].id}`,
+          `To view a specific file by name: project://${projectId}/filename/${files[0].name}`,
+          `To search file contents: Use project_files_search tool with searchType="content"`
+        );
+      }
       
       return {
         contents: [{
@@ -1053,9 +1068,11 @@ server.resource(
             success: true,
             projectId,
             fileCount: files.length,
+            fileNames,
             files: formattedFiles,
             // Include subscription hint
-            _hint: "Use the project_files_subscribe tool to get notifications of file changes"
+            _hint: "Use the project_files_subscribe tool to get notifications of file changes",
+            usageExamples: usageExamples
           }, null, 2),
         }]
       };
@@ -1522,6 +1539,128 @@ server.resource(
   }
 );
 
+// Add resource for finding a file by name
+server.resource(
+  "project-file-by-name",
+  new ResourceTemplate("project://{projectId}/filename/{fileName}", { list: undefined }),
+  async (uri, params) => {
+    try {
+      const projectId = params.projectId as string;
+      const fileName = params.fileName as string;
+      
+      if (!projectId || !fileName) {
+        return {
+          contents: [{
+            uri: uri.href,
+            mimeType: "application/json",
+            text: JSON.stringify({ 
+              error: "Project ID and file name are required",
+              success: false
+            }, null, 2),
+          }]
+        };
+      }
+      
+      // Find the file by name
+      const files = await projectFilesManager.listProjectFiles(projectId);
+      const file = files.find(f => f.name.toLowerCase() === fileName.toLowerCase());
+      
+      if (!file) {
+        // Try fuzzy matching if exact match fails
+        const possibleMatches = files.filter(f => 
+          f.name.toLowerCase().includes(fileName.toLowerCase())
+        ).map(f => f.name);
+        
+        return {
+          contents: [{
+            uri: uri.href,
+            mimeType: "application/json",
+            text: JSON.stringify({ 
+              error: "File not found",
+              success: false,
+              projectId,
+              fileName,
+              suggestedFiles: possibleMatches.length > 0 ? possibleMatches : undefined,
+              suggestion: possibleMatches.length > 0 
+                ? `You might be looking for: ${possibleMatches.join(', ')}` 
+                : "No similar files found. Try using project://{projectId}/files to list available files."
+            }, null, 2),
+          }]
+        };
+      }
+      
+      // If file is found, get the content
+      const { content } = await projectFilesManager.getFileContent(projectId, file.id);
+      
+      if (!content) {
+        return {
+          contents: [{
+            uri: uri.href,
+            mimeType: "application/json",
+            text: JSON.stringify({ 
+              error: "File content not found",
+              success: false,
+              projectId,
+              fileName,
+              fileId: file.id
+            }, null, 2),
+          }]
+        };
+      }
+      
+      // Determine if this is a text file for better handling
+      const isTextFile = file.contentType?.startsWith('text/') || 
+                         ['application/json', 'application/javascript', 'application/typescript'].includes(file.contentType || '');
+      
+      // Prepare file metadata
+      const metadata = {
+        id: file.id,
+        name: file.name,
+        contentType: file.contentType,
+        size: file.size,
+        sizeFormatted: formatFileSize(file.size),
+        createdAt: file.createdAt,
+        updatedAt: file.updatedAt,
+        isTextFile,
+        uri: uri.href,
+        fileIdUri: `project://${projectId}/file/${file.id}`
+      };
+      
+      // Return the file content with appropriate MIME type
+      return {
+        contents: [{
+          uri: uri.href,
+          mimeType: file.contentType || "application/octet-stream",
+          // For text files, include as text
+          ...(isTextFile
+            ? { 
+                text: content.toString('utf-8'),
+                metadata: JSON.stringify(metadata)
+              }
+            // For binary files, include as base64
+            : { 
+                blob: content.toString('base64'),
+                metadata: JSON.stringify(metadata)
+              }
+          ),
+        }]
+      };
+    } catch (error) {
+      console.error("Error getting file content by name:", error);
+      return {
+        contents: [{
+          uri: uri.href,
+          mimeType: "application/json",
+          text: JSON.stringify({ 
+            error: "Failed to get file content",
+            success: false
+          }, null, 2),
+        }]
+      };
+    }
+  }
+);
+
 // Helper function to format file size
 function formatFileSize(bytes: number): string {
   if (bytes === 0) return '0 Bytes';
@@ -1541,7 +1680,7 @@ function formatDate(date: Date | undefined): string {
 // Adding a simplified search tool with correct typing
 server.tool(
   "project_files_search",
-  "Search for files in a project by name, ID, or content",
+  "Search for files in a project by name, ID, or content. Returns information about matching files including URIs to access them directly.",
   {
     projectId: z.string().describe("The ID of the project to search for files in"),
     searchType: z.enum(["filename", "content", "id"]).describe("Search by filename, content, or file ID"),
@@ -1578,7 +1717,8 @@ ID: ${file.id}
 Type: ${file.contentType || 'unknown'}
 Size: ${formatFileSize(file.size)}
 Last Updated: ${formatDate(file.updatedAt)}
-URI: project://${projectId}/file/${file.id}`;
+URI by ID: project://${projectId}/file/${file.id}
+URI by Name: project://${projectId}/filename/${file.name}`;
       };
       
       // Process search options
@@ -1602,40 +1742,64 @@ URI: project://${projectId}/file/${file.id}`;
         
         addMessage(`Found file with ID: ${query}`);
         addMessage(formatFile(file));
-        addMessage(`To access this file, use: project://${projectId}/file/${file.id}`);
+        addMessage(`To access this file, use either of these URIs:
+- project://${projectId}/file/${file.id} (ID-based)
+- project://${projectId}/filename/${file.name} (name-based)`);
       } 
       // Search by filename
       else if (searchType === "filename") {
-        const files = await projectFilesManager.searchProjectFiles(projectId, {
-          term: query,
-          contentType: processedOptions.contentType,
-          minSize: processedOptions.minSize,
-          maxSize: processedOptions.maxSize,
-          limit: processedOptions.limit,
-          exactMatch: processedOptions.exactMatch,
-          fileIds: processedOptions.fileIds,
-          dateAfter: processedOptions.dateAfter,
-          dateBefore: processedOptions.dateBefore
-        });
+        let files;
+        
+        if (options.exactMatch) {
+          // For exact matches, use findFileByName
+          const file = await projectFilesManager.findFileByName(projectId, query);
+          files = file ? [file] : [];
+        } else {
+          // For partial matches, use findFilesByPartialName
+          files = await projectFilesManager.findFilesByPartialName(projectId, query);
+          
+          // Apply additional filters if specified
+          if (processedOptions.contentType || processedOptions.minSize || processedOptions.maxSize || 
+              processedOptions.fileIds || processedOptions.dateAfter || processedOptions.dateBefore) {
+            files = await projectFilesManager.searchProjectFiles(projectId, {
+              term: query,
+              contentType: processedOptions.contentType,
+              minSize: processedOptions.minSize,
+              maxSize: processedOptions.maxSize,
+              limit: processedOptions.limit,
+              exactMatch: processedOptions.exactMatch,
+              fileIds: processedOptions.fileIds,
+              dateAfter: processedOptions.dateAfter,
+              dateBefore: processedOptions.dateBefore
+            });
+          }
+        }
         
         if (files.length === 0) {
           addMessage(`No files found matching "${query}".`);
           addMessage(`Try broadening your search or verify that files exist in this project.`);
+          addMessage(`To list all available files, access: project://${projectId}/files`);
           return results;
         }
         
         addMessage(`Found ${files.length} files matching "${query}"`);
         
-        // Add first 5 files with details
-        files.slice(0, 5).forEach(file => {
-          addMessage(`- ${file.name} (${formatFileSize(file.size)}, ${file.contentType || 'unknown'})
-  ID: ${file.id}
-  Access: project://${projectId}/file/${file.id}`);
+        // Apply limit
+        if (processedOptions.limit && files.length > processedOptions.limit) {
+          files = files.slice(0, processedOptions.limit);
+          addMessage(`Showing ${processedOptions.limit} of ${files.length} matching files.`);
+        }
+        
+        // Add files with details
+        files.forEach((file, index) => {
+          addMessage(`FILE ${index + 1}: ${file.name}`);
+          addMessage(formatFile(file));
+          addMessage(''); // Empty line for separation
         });
         
-        if (files.length > 5) {
-          addMessage(`... and ${files.length - 5} more results`);
-        }
+        addMessage(`Access any of these files directly using:
+- By name: project://${projectId}/filename/{filename}
+- By ID: project://${projectId}/file/{id}`);
       } 
       // Search by content
       else {
@@ -1660,29 +1824,200 @@ URI: project://${projectId}/file/${file.id}`;
         const totalMatches = contentResults.matches.reduce((sum, file) => sum + file.matchCount, 0);
         addMessage(`Found ${totalMatches} content matches for "${query}" across ${contentResults.matches.length} files`);
         
-        // Add first 3 files with match info
-        contentResults.matches.slice(0, 3).forEach(match => {
-          addMessage(`File: ${match.fileName} (${match.matchCount} matches, ID: ${match.fileId})`);
+        // Add matches with context
+        contentResults.matches.forEach((match, index) => {
+          addMessage(`FILE ${index + 1}: ${match.fileName} (${match.matchCount} matches)`);
+          addMessage(`Access this file: project://${projectId}/filename/${match.fileName}`);
           
-          // Add first 3 matches per file
-          match.contexts.slice(0, 3).forEach(ctx => {
-            addMessage(`  Line ${ctx.line}: ${ctx.preview.replace(/\[MATCH\]/g, '**').replace(/\[\/MATCH\]/g, '**')}`);
+          // Add context for matches
+          match.contexts.forEach((ctx, ctxIndex) => {
+            addMessage(`  Match ${ctxIndex + 1} at line ${ctx.line}: ${ctx.preview.replace(/\[MATCH\]/g, '**').replace(/\[\/MATCH\]/g, '**')}`);
           });
           
-          if (match.contexts.length > 3) {
-            addMessage(`  ... and ${match.contexts.length - 3} more matches in this file`);
-          }
+          addMessage(''); // Empty line for separation
         });
-        
-        if (contentResults.matches.length > 3) {
-          addMessage(`... and matches in ${contentResults.matches.length - 3} more files`);
-        }
       }
       
       return results;
     } catch (error: any) {
       return {
         content: [{ type: "text", text: `Error searching files: ${error.message}` }]
+      };
+    }
+  }
+);
+
+server.tool(
+  "explain_project_files_access",
+  "Provides guidance on how to access project files through the MCP resources and tools.",
+  {
+    projectId: z.string().describe("The ID of the project (optional)").optional(),
+    detail: z.enum(["basic", "complete"]).describe("Level of detail to provide").optional().default("basic")
+  },
+  async ({ projectId, detail = "basic" }) => {
+    try {
+      const filePatterns = [
+        {
+          pattern: "project://{projectId}/files",
+          description: "Lists all files in a project with their IDs, names, and other metadata."
+        },
+        {
+          pattern: "project://{projectId}/filename/{fileName}",
+          description: "Access a file directly by its name. This is the most intuitive way to get file content."
+        },
+        {
+          pattern: "project://{projectId}/file/{fileId}",
+          description: "Access a file by its ID. Useful when you have the exact file ID."
+        }
+      ];
+      
+      const toolDescriptions = [
+        {
+          name: "project_files_search",
+          description: "Search for files by name, content, or ID.",
+          example: "Use this tool with searchType=\"filename\" and query=\"report\" to find files with 'report' in their name."
+        },
+        {
+          name: "project_files_subscribe",
+          description: "Subscribe to file changes in a project to receive notifications.",
+          example: "Use this to be notified when files are added, updated, or deleted."
+        },
+        {
+          name: "project_file_analyze",
+          description: "Get information about a file and extract text content if possible.",
+          example: "Good for analyzing text files and extracting their content for processing."
+        }
+      ];
+
+      // Basic explanation
+      let content = [
+        {
+          type: "text" as const,
+          text: "# Accessing Project Files through MCP",
+        },
+        {
+          type: "text" as const,
+          text: "Files are accessible through these MCP resource patterns:",
+        }
+      ];
+      
+      // Add patterns
+      filePatterns.forEach(pattern => {
+        content.push({
+          type: "text" as const,
+          text: `- \`${pattern.pattern}\` - ${pattern.description}`
+        });
+      });
+      
+      // Add example for specific project if ID is provided
+      if (projectId) {
+        content.push({
+          type: "text" as const,
+          text: "\n## Examples for this specific project:"
+        });
+        
+        content.push({
+          type: "text" as const,
+          text: `- List all files: \`project://${projectId}/files\``
+        });
+        
+        // Get a sample filename if possible
+        try {
+          const files = await projectFilesManager.listProjectFiles(projectId);
+          if (files.length > 0) {
+            const sampleFile = files[0];
+            content.push({
+              type: "text" as const,
+              text: `- Access a specific file by name: \`project://${projectId}/filename/${sampleFile.name}\``
+            });
+            content.push({
+              type: "text" as const,
+              text: `- Access a specific file by ID: \`project://${projectId}/file/${sampleFile.id}\``
+            });
+          }
+        } catch (error) {
+          // Just skip the examples if we can't get files
+        }
+      }
+      
+      // Add tool information
+      content.push({
+        type: "text" as const,
+        text: "\n## Related Tools:"
+      });
+      
+      toolDescriptions.forEach(tool => {
+        content.push({
+          type: "text" as const,
+          text: `- **${tool.name}**: ${tool.description}\n  ${tool.example}`
+        });
+      });
+      
+      // Add complete documentation for detailed requests
+      if (detail === "complete") {
+        content.push({
+          type: "text" as const,
+          text: "\n## Complete Access Guide"
+        });
+        
+        content.push({
+          type: "text" as const,
+          text: `
+### Step 1: List Available Files
+First, list all files in the project to see what's available:
+\`\`\`
+project://${projectId || '{projectId}'}/files
+\`\`\`
+
+This returns a JSON object with file metadata and will include:
+- \`fileNames\`: A simple array of all file names
+- \`files\`: Detailed information about each file including IDs and access URIs
+- \`usageExamples\`: Examples showing how to access specific files
+
+### Step 2: Access File Content
+After listing files, you can access specific file content in two ways:
+
+**By Name (Recommended)**:
+\`\`\`
+project://${projectId || '{projectId}'}/filename/{fileName}
+\`\`\`
+
+**By ID**:
+\`\`\`
+project://${projectId || '{projectId}'}/file/{fileId}
+\`\`\`
+
+### Step 3: Search for Specific Files
+If you need to find specific files, use the \`project_files_search\` tool:
+
+\`\`\`
+{
+  "projectId": "${projectId || 'your-project-id'}",
+  "searchType": "filename", // or "content" or "id"
+  "query": "your search term"
+}
+\`\`\`
+
+This will return detailed information about matching files with direct access URIs.
+
+### Tips for Working with Files
+- Always check if a file exists by listing files first
+- Use name-based access when possible as it's more intuitive
+- For text files, content is returned directly; for binary files, content is base64-encoded
+- If a file isn't found by exact name, the system will suggest similar file names
+`
+        });
+      }
+      
+      return { content };
+    } catch (error: any) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Error generating help: ${error.message}`
+          }
+        ]
       };
     }
   }

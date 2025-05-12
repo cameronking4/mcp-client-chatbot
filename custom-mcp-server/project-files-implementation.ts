@@ -584,6 +584,58 @@ class ProjectFilesManager extends EventEmitter {
       return null;
     }
   }
+  
+  /**
+   * Find a specific file by name
+   * @param projectId - The ID of the project
+   * @param fileName - The name of the file to find (case insensitive)
+   * @returns File metadata or null if not found
+   */
+  async findFileByName(projectId: string, fileName: string): Promise<ProjectFile | null> {
+    try {
+      const allFiles = await this.listProjectFiles(projectId);
+      return allFiles.find(file => file.name.toLowerCase() === fileName.toLowerCase()) || null;
+    } catch (error) {
+      console.error(`Error finding file by name ${fileName}:`, error);
+      return null;
+    }
+  }
+  
+  /**
+   * Find files with names containing a substring
+   * @param projectId - The ID of the project
+   * @param nameSubstring - Substring to search for in file names (case insensitive)
+   * @returns Array of matching files
+   */
+  async findFilesByPartialName(projectId: string, nameSubstring: string): Promise<ProjectFile[]> {
+    try {
+      const allFiles = await this.listProjectFiles(projectId);
+      return allFiles.filter(file => file.name.toLowerCase().includes(nameSubstring.toLowerCase()));
+    } catch (error) {
+      console.error(`Error finding files by partial name ${nameSubstring}:`, error);
+      return [];
+    }
+  }
+  
+  /**
+   * Get the content of a file by name
+   * @param projectId - The ID of the project
+   * @param fileName - The name of the file (case insensitive)
+   * @returns File content and metadata, or null if not found
+   */
+  async getFileContentByName(projectId: string, fileName: string): Promise<{ content: Buffer | null; file: ProjectFile | null }> {
+    try {
+      const file = await this.findFileByName(projectId, fileName);
+      if (!file) {
+        return { content: null, file: null };
+      }
+      
+      return this.getFileContent(projectId, file.id);
+    } catch (error) {
+      console.error(`Error getting file content by name ${fileName}:`, error);
+      return { content: null, file: null };
+    }
+  }
 }
 
 // Export singleton instance
