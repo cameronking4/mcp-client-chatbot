@@ -1,7 +1,7 @@
 "use client";
 
-import { ChevronDown, CornerRightUp, Paperclip, Pause } from "lucide-react";
-import { ReactNode, useMemo, useState } from "react";
+import { ChevronDown, CornerRightUp, Paperclip, Pause, X } from "lucide-react";
+import { ReactNode, useMemo, useState, useRef, useEffect } from "react";
 import { Button } from "ui/button";
 import { notImplementedToast } from "ui/shared-toast";
 import { PastesContentCard } from "./pasts-content";
@@ -17,6 +17,7 @@ import { ToolChoiceDropDown } from "./tool-choice-dropdown";
 
 import { MCPServerBindingSelector } from "./mcp-server-binding";
 import { MCPServerBinding } from "app-types/mcp";
+import { toast } from "sonner";
 
 interface PromptInputProps {
   placeholder?: string;
@@ -28,6 +29,27 @@ interface PromptInputProps {
   append: UseChatHelpers["append"];
   toolDisabled?: boolean;
   isLoading?: boolean;
+}
+
+// Helper function to get text preview from text files
+export function TextFilePreview({ file }: { file: File }) {
+  const [content, setContent] = useState<string>("");
+
+  useEffect(() => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = e.target?.result;
+      setContent(typeof text === "string" ? text.slice(0, 100) : "");
+    };
+    reader.readAsText(file);
+  }, [file]);
+
+  return (
+    <div>
+      {content}
+      {content.length >= 100 && "..."}
+    </div>
+  );
 }
 
 const MentionInput = dynamic(() => import("./mention-input"), {
@@ -48,6 +70,9 @@ export default function PromptInput({
   ownerType = "thread",
   ownerId,
 }: PromptInputProps) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [files, setFiles] = useState<FileList | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
   const [appStoreMutate, model, mcpList] = appStore(
     useShallow((state) => [state.mutate, state.model, state.mcpList]),
   );
@@ -84,12 +109,106 @@ export default function PromptInput({
     );
   }, [mcpList]);
 
+  // Handle file upload button click
+  const handleUploadClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  // Handle files selected from the file dialog
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFiles = event.target.files;
+    if (selectedFiles) {
+      const validFiles = Array.from(selectedFiles).filter(
+        (file) =>
+          file.type.startsWith("image/") || 
+          file.type.startsWith("text/") || 
+          file.type.startsWith("application/")
+      );
+
+      if (validFiles.length === selectedFiles.length) {
+        const dataTransfer = new DataTransfer();
+        validFiles.forEach((file) => dataTransfer.items.add(file));
+        setFiles(dataTransfer.files);
+      } else {
+        toast("Only image, text, and document files are allowed");
+      }
+    }
+  };
+
+  // Handle paste events (for images)
   const handlePaste = (e: React.ClipboardEvent) => {
     const text = e.clipboardData.getData("text/plain");
     if (text.length > 500) {
       setPastedContents([...pastedContents, text]);
       e.preventDefault();
+      return;
     }
+
+    const items = e.clipboardData?.items;
+    if (items) {
+      const fileItems = Array.from(items)
+        .map((item) => item.getAsFile())
+        .filter((file): file is File => file !== null);
+
+      if (fileItems.length > 0) {
+        const validFiles = fileItems.filter(
+          (file) =>
+            file.type.startsWith("image/") || file.type.startsWith("text/")
+        );
+
+        if (validFiles.length === fileItems.length) {
+          const dataTransfer = new DataTransfer();
+          validFiles.forEach((file) => dataTransfer.items.add(file));
+          setFiles(dataTransfer.files);
+          e.preventDefault();
+        } else {
+          toast("Only image and text files are allowed from clipboard");
+        }
+      }
+    }
+  };
+
+  // Handle drag over events
+  const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setIsDragging(true);
+  };
+
+  // Handle drag leave events
+  const handleDragLeave = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setIsDragging(false);
+  };
+
+  // Handle drop events
+  const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    
+    const droppedFiles = event.dataTransfer.files;
+    const droppedFilesArray = Array.from(droppedFiles);
+
+    if (droppedFilesArray.length > 0) {
+      const validFiles = droppedFilesArray.filter(
+        (file) =>
+          file.type.startsWith("image/") ||
+          file.type.startsWith("text/") ||
+          file.type.startsWith("application/")
+      );
+
+      if (validFiles.length === droppedFilesArray.length) {
+        const dataTransfer = new DataTransfer();
+        validFiles.forEach((file) => dataTransfer.items.add(file));
+        setFiles(dataTransfer.files);
+      } else {
+        toast("Only image, text, and document files are allowed!");
+      }
+    }
+    setIsDragging(false);
+  };
+
+  // Clear files
+  const clearFiles = () => {
+    setFiles(null);
   };
 
   const submit = () => {
@@ -101,7 +220,7 @@ export default function PromptInput({
       text: content,
     }));
 
-    if (userMessage.length === 0 && pastedContentsParsed.length === 0) {
+    if (userMessage.length === 0 && pastedContentsParsed.length === 0 && (!files || files.length === 0)) {
       return;
     }
 
@@ -111,25 +230,106 @@ export default function PromptInput({
         requiredTools: toolMentionItems.map((item) => item.id),
       });
     }
+
+    // Create options object with attachments if available
+    const options = files ? { experimental_attachments: files } : undefined;
+
     setPastedContents([]);
     setToolMentionItems([]);
     setInput("");
-    append!({
-      role: "user",
-      content: "",
-      annotations,
-      parts: [
-        ...pastedContentsParsed,
-        {
-          type: "text",
-          text: userMessage,
-        },
-      ],
-    });
+    setFiles(null);
+    append!(
+      {
+        role: "user",
+        content: "",
+        annotations,
+        parts: [
+          ...pastedContentsParsed,
+          {
+            type: "text",
+            text: userMessage,
+          },
+        ],
+      },
+      options
+    );
   };
 
   return (
-    <div className="max-w-3xl mx-auto fade-in animate-in">
+    <div 
+      className="max-w-3xl mx-auto fade-in animate-in"
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {/* Drag overlay */}
+      {isDragging && (
+        <div className="absolute inset-0 pointer-events-none dark:bg-zinc-900/90 rounded-2xl z-10 flex flex-col justify-center items-center gap-1 bg-zinc-100/90">
+          <div>Drag and drop files here</div>
+          <div className="text-sm dark:text-zinc-400 text-zinc-500">
+            {"(images, text, and documents)"}
+          </div>
+        </div>
+      )}
+
+      {/* File previews */}
+      {files && files.length > 0 && (
+        <div className="flex flex-row gap-2 overflow-x-auto max-w-full pb-2 mb-2">
+          {Array.from(files).map((file, index) => (
+            <div
+              key={`${file.name}-${index}`}
+              className="relative group"
+            >
+              {file.type.startsWith("image/") ? (
+                <div className="relative w-14 h-14">
+                  <img
+                    src={URL.createObjectURL(file)}
+                    alt={file.name}
+                    className="w-14 h-14 object-cover rounded-md border border-border"
+                  />
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      clearFiles();
+                    }}
+                    className="absolute -top-2 -right-2 bg-background border border-border rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              ) : (
+                <div className="relative w-14 h-14 flex items-center justify-center bg-muted/30 rounded-md border border-border text-xs text-muted-foreground overflow-hidden">
+                  <div className="p-1 truncate text-center">
+                    {file.name.length > 10 ? `${file.name.substring(0, 10)}...` : file.name}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      clearFiles();
+                    }}
+                    className="absolute -top-2 -right-2 bg-background border border-border rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Hidden file input */}
+      <input
+        type="file"
+        multiple
+        accept="image/*,text/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        ref={fileInputRef}
+        className="hidden"
+        onChange={handleFileChange}
+      />
+
       <div className="z-10 mx-auto w-full max-w-3xl relative">
         <fieldset className="flex w-full min-w-0 max-w-full flex-col px-2">
           <div className="rounded-4xl backdrop-blur-sm transition-all duration-200 bg-muted/40 relative flex w-full flex-col cursor-text z-10 border items-stretch focus-within:border-muted-foreground hover:border-muted-foreground p-3">
@@ -170,9 +370,9 @@ export default function PromptInput({
               <div className="flex w-full items-center z-30 gap-1.5">
                 <div
                   className="cursor-pointer text-muted-foreground border rounded-full p-2 bg-transparent hover:bg-muted transition-all duration-200"
-                  onClick={notImplementedToast}
+                  onClick={handleUploadClick}
                 >
-                  <Paperclip className="size-4" />
+                  <Paperclip className={`size-4 ${files && files.length > 0 ? "text-primary" : ""}`} />
                 </div>
 
                 {!toolDisabled && (
