@@ -7,7 +7,7 @@ import { cn } from "lib/utils";
 import { SidebarGroup } from "ui/sidebar";
 import { TooltipProvider } from "ui/tooltip";
 import Link from "next/link";
-import { Library, MessageCircleDashed } from "lucide-react";
+import { Library, MessageCircleDashed, MessageCirclePlus, Server } from "lucide-react";
 
 export function AppSidebarMenus({ isOpen }: { isOpen: boolean }) {
   return (
@@ -21,12 +21,13 @@ export function AppSidebarMenus({ isOpen }: { isOpen: boolean }) {
                   <TooltipTrigger asChild>
                     <SidebarMenuButton
                       className={cn(
-                        isOpen && "flex  justify-center ",
+                        isOpen && "flex justify-between w-full",
                         "border border-ring/80 font-semibold border-dashed",
+                        "p-4"
                       )}
                     >
-                      <MessageCircleDashed />
                       New Chat
+                      <MessageCirclePlus />
                     </SidebarMenuButton>
                   </TooltipTrigger>
                   <TooltipContent side="right">
@@ -47,11 +48,12 @@ export function AppSidebarMenus({ isOpen }: { isOpen: boolean }) {
                       // isActive
                       className={cn(
                         isOpen &&
-                          "flex justify-center font-semibold bg-primary text-primary-foreground",
+                          "flex justify-between font-semibold bg-primary text-primary-foreground p-4",
                       )}
                     >
                       {!isOpen && <Library />}
-                      MCP Configuration
+                      MCP Servers
+                      <Server />
                     </SidebarMenuButton>
                   </TooltipTrigger>
                   <TooltipContent side="right">

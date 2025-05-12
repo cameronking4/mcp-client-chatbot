@@ -1,9 +1,81 @@
 import Link from "next/link";
-import React, { memo, PropsWithChildren } from "react";
+import React, { memo, PropsWithChildren, ReactElement, ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import { PreBlock } from "./pre-block";
 import { isJson, isString, toAny } from "lib/utils";
 import JsonView from "ui/json-view";
+import dynamic from 'next/dynamic';
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableFooter,
+  TableHead,
+  TableRow,
+  TableCell,
+  TableCaption,
+} from "@/components/ui/table";
+import remarkGfm from 'remark-gfm';
+
+// Dynamically import the MermaidRenderer to avoid SSR issues
+const MermaidRenderer = dynamic(() => import('../components/mermaid-renderer').then(mod => mod.MermaidRenderer), {
+  ssr: false,
+  loading: () => <div className="animate-pulse p-4 bg-accent/30 rounded-2xl my-4 min-h-36 flex items-center justify-center border">
+    <div className="text-muted-foreground">Loading diagram...</div>
+  </div>
+});
+
+// Function to improve table rendering by preprocessing the markdown content
+const preprocessMarkdownTables = (markdown: string): string => {
+  // Check if content contains potential table markers
+  if (!markdown.includes('|')) return markdown;
+  
+  // Split content into lines to process tables
+  const lines = markdown.split('\n');
+  const processedLines: string[] = [];
+  
+  let inTable = false;
+  let tableLines: string[] = [];
+  
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const isTableLine = line.trim().startsWith('|') && line.trim().endsWith('|');
+    const isHeaderSeparator = line.includes('|-') && line.includes('-|');
+    
+    // If this is a table line
+    if (isTableLine || isHeaderSeparator) {
+      if (!inTable) {
+        inTable = true;
+      }
+      tableLines.push(line);
+    } else {
+      // End of table
+      if (inTable) {
+        inTable = false;
+        // Only process as table if we have at least 2 rows (header + separator)
+        if (tableLines.length >= 2) {
+          // Format the table properly
+          const formattedTable = tableLines.join('\n');
+          processedLines.push(formattedTable);
+        } else {
+          // Not a proper table, add lines as they were
+          processedLines.push(...tableLines);
+        }
+        tableLines = [];
+      }
+      processedLines.push(line);
+    }
+  }
+  
+  // Handle case where table is at the end of the markdown
+  if (inTable && tableLines.length >= 2) {
+    processedLines.push(tableLines.join('\n'));
+  } else if (tableLines.length > 0) {
+    processedLines.push(...tableLines);
+  }
+  
+  return processedLines.join('\n');
+};
 
 const FadeIn = memo(({ children }: PropsWithChildren) => {
   return <span className="fade-in animate-in duration-1000">{children} </span>;
@@ -19,6 +91,13 @@ const WordByWordFadeIn = memo(({ children }: PropsWithChildren) => {
   );
 });
 WordByWordFadeIn.displayName = "WordByWordFadeIn";
+
+// Define types for code block elements
+interface CodeProps {
+  className?: string;
+  children: string;
+}
+
 const components: Partial<Components> = {
   code: ({ children }) => {
     return (
@@ -44,6 +123,23 @@ const components: Partial<Components> = {
     );
   },
   pre: ({ children }) => {
+    // Check if it's a mermaid diagram
+    const childElement = children as ReactElement<CodeProps>;
+    
+    if (
+      childElement &&
+      childElement.props &&
+      typeof childElement.props.className === 'string' &&
+      childElement.props.className === 'language-mermaid'
+    ) {
+      return (
+        <div className="px-4 py-2">
+          <MermaidRenderer chart={childElement.props.children} />
+        </div>
+      );
+    }
+    
+    // Regular code block
     return (
       <div className="px-4 py-2">
         <PreBlock>{children}</PreBlock>
@@ -140,15 +236,58 @@ const components: Partial<Components> = {
     // eslint-disable-next-line @next/next/no-img-element
     return <img className="mx-auto rounded-lg" src={src} alt={alt} {...rest} />;
   },
+  // Table components with improved styling and handling
+  table: ({ children }) => {
+    return (
+      <div className="my-6 px-4 overflow-x-auto">
+        <Table className="w-full border-collapse">{children}</Table>
+      </div>
+    );
+  },
+  thead: ({ children }) => {
+    return <TableHeader className="bg-muted/50">{children}</TableHeader>;
+  },
+  tbody: ({ children }) => {
+    return <TableBody>{children}</TableBody>;
+  },
+  tfoot: ({ children }) => {
+    return <TableFooter>{children}</TableFooter>;
+  },
+  tr: ({ children }) => {
+    return <TableRow>{children}</TableRow>;
+  },
+  th: ({ children }) => {
+    return <TableHead className="p-2 font-semibold border">
+      {typeof children === 'string' ? <WordByWordFadeIn>{children}</WordByWordFadeIn> : children}
+    </TableHead>;
+  },
+  td: ({ children }) => {
+    return <TableCell className="p-2 border">
+      {typeof children === 'string' ? <WordByWordFadeIn>{children}</WordByWordFadeIn> : children}
+    </TableCell>;
+  },
+  caption: ({ children }) => {
+    return <TableCaption>
+      {typeof children === 'string' ? <WordByWordFadeIn>{children}</WordByWordFadeIn> : children}
+    </TableCaption>;
+  },
 };
 
 const NonMemoizedMarkdown = ({ children }: { children: string }) => {
+  // Pre-process markdown text to better handle tables
+  const processedMarkdown = preprocessMarkdownTables(children);
+  
   return (
     <article className="w-full h-full relative">
-      {isJson(children) ? (
-        <JsonView data={children} />
+      {isJson(processedMarkdown) ? (
+        <JsonView data={processedMarkdown} />
       ) : (
-        <ReactMarkdown components={components}>{children}</ReactMarkdown>
+        <ReactMarkdown 
+          components={components}
+          remarkPlugins={[remarkGfm]} // Add GFM support for tables and other GitHub flavored markdown
+        >
+          {processedMarkdown}
+        </ReactMarkdown>
       )}
     </article>
   );
