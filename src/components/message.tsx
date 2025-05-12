@@ -6,7 +6,7 @@ import equal from "fast-deep-equal";
 
 import { cn } from "lib/utils";
 import type { UseChatHelpers } from "@ai-sdk/react";
-import { Alert, AlertDescription, AlertTitle } from "ui/alert";
+import { FileAttachmentList } from "./file-attachment";
 import {
   UserMessagePart,
   AssistMessagePart,
@@ -51,19 +51,15 @@ const PurePreviewMessage = ({
         )}
       >
         <div className="flex flex-col gap-4 w-full">
-          {message.experimental_attachments && (
+          {message.experimental_attachments && message.experimental_attachments.length > 0 && (
             <div
               data-testid={"message-attachments"}
-              className="flex flex-row justify-end gap-2"
+              className={cn(
+                "flex flex-row gap-2",
+                isUserMessage ? "justify-end" : "justify-start"
+              )}
             >
-              {message.experimental_attachments.map((attachment) => (
-                <Alert key={attachment.url}>
-                  <AlertTitle>Attachment</AlertTitle>
-                  <AlertDescription>
-                    attachment not yet implemented 😁
-                  </AlertDescription>
-                </Alert>
-              ))}
+              <FileAttachmentList attachments={message.experimental_attachments} />
             </div>
           )}
 

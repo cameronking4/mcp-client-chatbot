@@ -89,6 +89,11 @@ export async function POST(request: Request) {
       return new Response("Thread not found", { status: 404 });
     }
 
+    // Log attachments if present
+    if (message.experimental_attachments && message.experimental_attachments.length > 0) {
+      console.log("attachments", message.experimental_attachments.map(a => ({ name: a.name, type: a.contentType })));
+    }
+
     const annotations = (message?.annotations as ChatMessageAnnotation[]) ?? [];
 
     const mcpTools = mcpClientsManager.tools();
