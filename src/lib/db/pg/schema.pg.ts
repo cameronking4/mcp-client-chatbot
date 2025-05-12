@@ -9,6 +9,7 @@ import {
   uuid,
   jsonb,
   primaryKey,
+  integer,
 } from "drizzle-orm/pg-core";
 
 export const ChatThreadSchema = pgTable("chat_thread", {
@@ -41,6 +42,19 @@ export const ProjectSchema = pgTable("project", {
     .notNull()
     .references(() => UserSchema.id),
   instructions: json("instructions").$type<Project["instructions"]>(),
+  createdAt: timestamp("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: timestamp("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});
+
+export const ProjectFileSchema = pgTable("project_file", {
+  id: uuid("id").primaryKey().notNull().defaultRandom(),
+  projectId: uuid("project_id")
+    .notNull()
+    .references(() => ProjectSchema.id),
+  name: text("name").notNull(),
+  contentType: text("content_type").notNull(),
+  size: integer("size").notNull(),
+  blobPath: text("blob_path").notNull(), // Path in Azure blob storage
   createdAt: timestamp("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: timestamp("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
@@ -86,6 +100,7 @@ export const McpServerBindingSchema = pgTable(
 export type ChatThreadEntity = typeof ChatThreadSchema.$inferSelect;
 export type ChatMessageEntity = typeof ChatMessageSchema.$inferSelect;
 export type ProjectEntity = typeof ProjectSchema.$inferSelect;
+export type ProjectFileEntity = typeof ProjectFileSchema.$inferSelect;
 export type UserEntity = typeof UserSchema.$inferSelect;
 export type McpServerBindingEntity = typeof McpServerBindingSchema.$inferSelect;
 // export type McpServerEntity = typeof McpServerSchema.$inferSelect;

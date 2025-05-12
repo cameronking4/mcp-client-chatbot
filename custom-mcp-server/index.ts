@@ -1,5 +1,5 @@
 /**
- * Custom MCP Server with Scratchpad Resources
+ * Custom MCP Server with Resources
  * 
  * This server implements the Model Context Protocol (MCP) and provides:
  * 
@@ -7,6 +7,8 @@
  *    - scratchpad://namespaces - Lists all available namespaces
  *    - scratchpad://{namespace}/keys - Lists all keys in a specific namespace
  *    - scratchpad://{namespace}/{key} - Gets the value of a specific key in a namespace
+ *    - project://{projectId}/files - Lists all files in a project
+ *    - project://{projectId}/file/{fileId} - Gets the content of a specific file
  * 
  * 2. MCP Tools:
  *    - get_weather - Gets weather information for a location
@@ -23,6 +25,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { memoryStore } from "./scratchpad-db-implementation.js";
 import { dataAnalyzer } from "./data-analysis-implementation.js";
+import { projectFilesManager } from "./project-files-implementation.js";
 
 const server = new McpServer({
   name: "custom-mcp-server",
@@ -1002,6 +1005,688 @@ async function simulateLLMResponse(prompt: string, maxTokens: number): Promise<s
   const contentLength = Math.min(maxTokens, prompt.length);
   return template + " " + "Additional context would enhance this analysis.".substring(0, contentLength);
 }
+
+// Project file resources
+// Enhanced implementation for improved LLM accessibility
+
+// List all files in a project
+server.resource(
+  "project-files",
+  new ResourceTemplate("project://{projectId}/files", { list: undefined }),
+  async (uri, params) => {
+    try {
+      const projectId = params.projectId as string;
+      
+      if (!projectId) {
+        return {
+          contents: [{
+            uri: uri.href,
+            mimeType: "application/json",
+            text: JSON.stringify({ 
+              error: "Project ID is required",
+              success: false
+            }, null, 2),
+          }]
+        };
+      }
+      
+      const files = await projectFilesManager.listProjectFiles(projectId);
+      
+      // Format file information in a more structured way for easier LLM processing
+      const formattedFiles = files.map(file => ({
+        id: file.id,
+        name: file.name,
+        contentType: file.contentType || 'application/octet-stream',
+        size: file.size,
+        sizeFormatted: formatFileSize(file.size),
+        createdAt: file.createdAt,
+        updatedAt: file.updatedAt,
+        // Add direct access URI for convenience
+        uri: `project://${projectId}/file/${file.id}`
+      }));
+      
+      return {
+        contents: [{
+          uri: uri.href,
+          mimeType: "application/json",
+          text: JSON.stringify({ 
+            success: true,
+            projectId,
+            fileCount: files.length,
+            files: formattedFiles,
+            // Include subscription hint
+            _hint: "Use the project_files_subscribe tool to get notifications of file changes"
+          }, null, 2),
+        }]
+      };
+    } catch (error) {
+      console.error("Error listing project files:", error);
+      return {
+        contents: [{
+          uri: uri.href,
+          mimeType: "application/json",
+          text: JSON.stringify({ 
+            error: "Failed to list project files",
+            success: false
+          }, null, 2),
+        }]
+      };
+    }
+  }
+);
+
+// Get content of a specific file
+server.resource(
+  "project-file-content",
+  new ResourceTemplate("project://{projectId}/file/{fileId}", { list: undefined }),
+  async (uri, params) => {
+    try {
+      const projectId = params.projectId as string;
+      const fileId = params.fileId as string;
+      
+      if (!projectId || !fileId) {
+        return {
+          contents: [{
+            uri: uri.href,
+            mimeType: "application/json",
+            text: JSON.stringify({ 
+              error: "Project ID and File ID are required",
+              success: false
+            }, null, 2),
+          }]
+        };
+      }
+      
+      const { content, file } = await projectFilesManager.getFileContent(projectId, fileId);
+      
+      if (!content || !file) {
+        return {
+          contents: [{
+            uri: uri.href,
+            mimeType: "application/json",
+            text: JSON.stringify({ 
+              error: "File not found",
+              success: false,
+              projectId,
+              fileId
+            }, null, 2),
+          }]
+        };
+      }
+      
+      // Determine if this is a text file for better handling
+      const isTextFile = file.contentType?.startsWith('text/') || 
+                         ['application/json', 'application/javascript', 'application/typescript'].includes(file.contentType || '');
+      
+      // Prepare file metadata
+      const metadata = {
+        id: file.id,
+        name: file.name,
+        contentType: file.contentType,
+        size: file.size,
+        sizeFormatted: formatFileSize(file.size),
+        createdAt: file.createdAt,
+        updatedAt: file.updatedAt,
+        isTextFile,
+        uri: uri.href
+      };
+      
+      // Return the file content with appropriate MIME type
+      return {
+        contents: [{
+          uri: uri.href,
+          mimeType: file.contentType || "application/octet-stream",
+          // For text files, include as text
+          ...(isTextFile
+            ? { 
+                text: content.toString('utf-8'),
+                metadata: JSON.stringify(metadata)
+              }
+            // For binary files, include as base64
+            : { 
+                blob: content.toString('base64'),
+                metadata: JSON.stringify(metadata)
+              }
+          ),
+        }]
+      };
+    } catch (error) {
+      console.error("Error getting file content:", error);
+      return {
+        contents: [{
+          uri: uri.href,
+          mimeType: "application/json",
+          text: JSON.stringify({ 
+            error: "Failed to get file content",
+            success: false
+          }, null, 2),
+        }]
+      };
+    }
+  }
+);
+
+// Add tool for subscribing to file changes
+server.tool(
+  "project_files_subscribe",
+  "Subscribe to file changes in a project to get notifications when files are added, updated, or deleted.",
+  {
+    projectId: z.string().describe("The ID of the project to subscribe to"),
+    action: z.enum(["subscribe", "unsubscribe"]).describe("Whether to subscribe or unsubscribe"),
+    subscriberId: z.string().optional().describe("Optional identifier for the subscriber (defaults to a generated ID)")
+  },
+  async ({ projectId, action, subscriberId }) => {
+    try {
+      // Generate a subscriber ID if not provided
+      const subId = subscriberId || `sub-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+      
+      if (action === "subscribe") {
+        const success = projectFilesManager.subscribeToProject(projectId, subId);
+        
+        if (success) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Successfully subscribed to file changes for project ${projectId} with subscriber ID: ${subId}`,
+              },
+              {
+                type: "text",
+                text: `You'll be notified when files are added, updated, or deleted. Your subscription ID is: ${subId}`,
+              },
+              {
+                type: "text",
+                text: `To access files, use: project://${projectId}/files for listing or project://${projectId}/file/{fileId} for content`,
+              }
+            ],
+          };
+        } else {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Failed to subscribe to project ${projectId}. Please try again.`,
+              }
+            ],
+          };
+        }
+      } else {
+        // Unsubscribe action
+        const success = projectFilesManager.unsubscribeFromProject(projectId, subId);
+        
+        if (success) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Successfully unsubscribed from file changes for project ${projectId} with subscriber ID: ${subId}`,
+              }
+            ],
+          };
+        } else {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Failed to unsubscribe from project ${projectId}. The subscription may not exist.`,
+              }
+            ],
+          };
+        }
+      }
+    } catch (error: any) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error managing subscription: ${error.message}`,
+          }
+        ],
+      };
+    }
+  }
+);
+
+// Add tool for file information and text extraction
+server.tool(
+  "project_file_analyze",
+  "Get information about a file and extract text content if possible.",
+  {
+    projectId: z.string().describe("The ID of the project"),
+    fileId: z.string().describe("The ID of the file to analyze"),
+    extractText: z.boolean().optional().default(true).describe("Whether to extract text content (for text files)"),
+    saveToNamespace: z.string().optional().describe("Optional namespace to save the extracted text"),
+    saveToKey: z.string().optional().describe("Optional key to save the extracted text under")
+  },
+  async ({ projectId, fileId, extractText = true, saveToNamespace, saveToKey }) => {
+    try {
+      const { content, file } = await projectFilesManager.getFileContent(projectId, fileId);
+      
+      if (!file) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `File not found with ID: ${fileId} in project: ${projectId}`,
+            }
+          ],
+        };
+      }
+      
+      // Determine if this is a text file
+      const isTextFile = file.contentType?.startsWith('text/') || 
+                         ['application/json', 'application/javascript', 'application/typescript'].includes(file.contentType || '');
+      
+      // Create file info message
+      const fileInfo = [
+        `File Name: ${file.name}`,
+        `Content Type: ${file.contentType || 'unknown'}`,
+        `Size: ${formatFileSize(file.size)}`,
+        `Created: ${formatDate(file.createdAt)}`,
+        `Last Updated: ${formatDate(file.updatedAt)}`,
+        `File Type: ${isTextFile ? 'Text' : 'Binary'}`,
+        `Resource URI: project://${projectId}/file/${fileId}`
+      ].join('\n');
+      
+      // Extract text content if requested and possible
+      if (extractText && isTextFile && content) {
+        const textContent = content.toString('utf-8');
+        
+        // Save to scratchpad if requested
+        if (saveToNamespace && saveToKey) {
+          await memoryStore.storeValue(
+            saveToNamespace,
+            saveToKey,
+            textContent
+          );
+          
+          return {
+            content: [
+              {
+                type: "text",
+                text: fileInfo,
+              },
+              {
+                type: "text",
+                text: `File text content (${textContent.length} characters) has been extracted and saved to namespace "${saveToNamespace}" with key "${saveToKey}"`,
+              },
+              {
+                type: "text",
+                text: `You can retrieve the content using the scratchpad_memory tool with action="get", namespaceId="${saveToNamespace}", key="${saveToKey}"`,
+              }
+            ],
+          };
+        }
+        
+        // Truncate text if too long
+        const maxPreviewLength = 1500;
+        const truncated = textContent.length > maxPreviewLength;
+        const previewText = truncated 
+          ? textContent.substring(0, maxPreviewLength) + `...\n[Content truncated. Total length: ${textContent.length} characters]`
+          : textContent;
+        
+        return {
+          content: [
+            {
+              type: "text",
+              text: fileInfo,
+            },
+            {
+              type: "text",
+              text: `File Text Content${truncated ? ' (Preview)' : ''}:`,
+            },
+            {
+              type: "text",
+              text: previewText,
+            },
+            {
+              type: "text",
+              text: truncated 
+                ? `To see the full content, access the resource directly at project://${projectId}/file/${fileId}`
+                : "",
+            }
+          ],
+        };
+      } else if (!isTextFile && content) {
+        // For binary files, just return the info
+        return {
+          content: [
+            {
+              type: "text",
+              text: fileInfo,
+            },
+            {
+              type: "text",
+              text: "This is a binary file. Text extraction is not available.",
+            }
+          ],
+        };
+      } else {
+        return {
+          content: [
+            {
+              type: "text",
+              text: fileInfo,
+            },
+            {
+              type: "text",
+              text: "Content not available or extraction not requested.",
+            }
+          ],
+        };
+      }
+    } catch (error: any) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error analyzing file: ${error.message}`,
+          }
+        ],
+      };
+    }
+  }
+);
+
+// Add tool for notifying file changes from the UI
+server.tool(
+  "project_files_notify",
+  "Notify the MCP server of file changes (create, update, delete) to update subscribers. This is mainly for internal use by the application.",
+  {
+    projectId: z.string().describe("The ID of the project"),
+    fileId: z.string().optional().describe("Optional ID of the specific file that changed"),
+    changeType: z.enum(["create", "update", "delete"]).describe("The type of change that occurred"),
+    silent: z.boolean().optional().default(false).describe("Whether to suppress notification messages (for internal use)")
+  },
+  async ({ projectId, fileId, changeType, silent = false }) => {
+    try {
+      // Notify subscribers of the change
+      projectFilesManager.notifyFileChange(projectId, fileId, changeType);
+      
+      // Clear cache to force refresh on next access
+      
+      if (silent) {
+        // Just return a simple success message for internal use
+        return {
+          content: [
+            {
+              type: "text",
+              text: `File change notification processed.`,
+            }
+          ],
+        };
+      }
+      
+      // For interactive use
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Successfully notified subscribers of ${changeType} operation${fileId ? ` for file ${fileId}` : ''} in project ${projectId}.`,
+          },
+          {
+            type: "text",
+            text: `Subscribers will receive updates about this change.`,
+          }
+        ],
+      };
+    } catch (error: any) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error notifying file change: ${error.message}`,
+          }
+        ],
+      };
+    }
+  }
+);
+
+// Add resource for finding a file by ID
+server.resource(
+  "project-file-by-id",
+  new ResourceTemplate("project://{projectId}/file/id/{fileId}", { list: undefined }),
+  async (uri, params) => {
+    try {
+      const projectId = params.projectId as string;
+      const fileId = params.fileId as string;
+      
+      if (!projectId || !fileId) {
+        return {
+          contents: [{
+            uri: uri.href,
+            mimeType: "application/json",
+            text: JSON.stringify({ 
+              error: "Project ID and File ID are required",
+              success: false
+            }, null, 2),
+          }]
+        };
+      }
+      
+      // Find the file
+      const file = await projectFilesManager.findFileById(projectId, fileId);
+      
+      if (!file) {
+        return {
+          contents: [{
+            uri: uri.href,
+            mimeType: "application/json",
+            text: JSON.stringify({ 
+              error: "File not found",
+              success: false,
+              projectId,
+              fileId
+            }, null, 2),
+          }]
+        };
+      }
+      
+      // Return file metadata with access links
+      return {
+        contents: [{
+          uri: uri.href,
+          mimeType: "application/json",
+          text: JSON.stringify({ 
+            success: true,
+            file: {
+              id: file.id,
+              name: file.name,
+              contentType: file.contentType || 'application/octet-stream',
+              size: file.size,
+              sizeFormatted: formatFileSize(file.size),
+              createdAt: file.createdAt,
+              updatedAt: file.updatedAt,
+              // Add direct access URIs for convenience
+              contentUri: `project://${projectId}/file/${file.id}`,
+              searchResultsUri: `project://${projectId}/search?fileId=${file.id}`
+            },
+            _tip: "To access the file content, use the contentUri link."
+          }, null, 2),
+        }]
+      };
+    } catch (error) {
+      console.error("Error finding file by ID:", error);
+      return {
+        contents: [{
+          uri: uri.href,
+          mimeType: "application/json",
+          text: JSON.stringify({ 
+            error: "Failed to find file",
+            success: false
+          }, null, 2),
+        }]
+      };
+    }
+  }
+);
+
+// Helper function to format file size
+function formatFileSize(bytes: number): string {
+  if (bytes === 0) return '0 Bytes';
+  
+  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(1024));
+  
+  return parseFloat((bytes / Math.pow(1024, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+// Helper function to format date
+function formatDate(date: Date | undefined): string {
+  if (!date) return 'Unknown';
+  return new Date(date).toISOString();
+}
+
+// Adding a simplified search tool with correct typing
+server.tool(
+  "project_files_search",
+  "Search for files in a project by name, ID, or content",
+  {
+    projectId: z.string().describe("The ID of the project to search for files in"),
+    searchType: z.enum(["filename", "content", "id"]).describe("Search by filename, content, or file ID"),
+    query: z.string().describe("The search term or file ID"),
+    options: z.object({
+      caseSensitive: z.boolean().optional().describe("Whether the search should be case sensitive"),
+      limit: z.number().optional().describe("Maximum number of results to return"),
+      fileExtensions: z.array(z.string()).optional().describe("Limit to specific file extensions"),
+      contextLines: z.number().optional().describe("Number of context lines for content searches"),
+      fileIds: z.array(z.string()).optional().describe("Specific files to search in by ID"),
+      contentType: z.string().optional().describe("Filter by content type"),
+      minSize: z.number().optional().describe("Minimum file size in bytes"),
+      maxSize: z.number().optional().describe("Maximum file size in bytes"),
+      exactMatch: z.boolean().optional().describe("Whether filename matches should be exact"),
+      dateAfter: z.string().optional().describe("ISO date string - only include files after this date"),
+      dateBefore: z.string().optional().describe("ISO date string - only include files before this date")
+    }).optional().describe("Additional search options")
+  },
+  async ({ projectId, searchType, query, options = {} }) => {
+    try {
+      const results = {
+        content: [] as Array<{ type: "text"; text: string }>
+      };
+      
+      // Add a message
+      const addMessage = (text: string) => {
+        results.content.push({ type: "text", text });
+      };
+      
+      // Common logic for formatting file info
+      const formatFile = (file: any) => {
+        return `Name: ${file.name}
+ID: ${file.id}
+Type: ${file.contentType || 'unknown'}
+Size: ${formatFileSize(file.size)}
+Last Updated: ${formatDate(file.updatedAt)}
+URI: project://${projectId}/file/${file.id}`;
+      };
+      
+      // Process search options
+      const processedOptions: any = { ...options };
+      if (options.dateAfter) {
+        processedOptions.dateAfter = new Date(options.dateAfter);
+      }
+      if (options.dateBefore) {
+        processedOptions.dateBefore = new Date(options.dateBefore);
+      }
+      
+      // Search by ID
+      if (searchType === "id") {
+        const file = await projectFilesManager.findFileById(projectId, query);
+        
+        if (!file) {
+          addMessage(`No file found with ID: ${query}`);
+          addMessage(`Verify that the file ID is correct and exists in this project.`);
+          return results;
+        }
+        
+        addMessage(`Found file with ID: ${query}`);
+        addMessage(formatFile(file));
+        addMessage(`To access this file, use: project://${projectId}/file/${file.id}`);
+      } 
+      // Search by filename
+      else if (searchType === "filename") {
+        const files = await projectFilesManager.searchProjectFiles(projectId, {
+          term: query,
+          contentType: processedOptions.contentType,
+          minSize: processedOptions.minSize,
+          maxSize: processedOptions.maxSize,
+          limit: processedOptions.limit,
+          exactMatch: processedOptions.exactMatch,
+          fileIds: processedOptions.fileIds,
+          dateAfter: processedOptions.dateAfter,
+          dateBefore: processedOptions.dateBefore
+        });
+        
+        if (files.length === 0) {
+          addMessage(`No files found matching "${query}".`);
+          addMessage(`Try broadening your search or verify that files exist in this project.`);
+          return results;
+        }
+        
+        addMessage(`Found ${files.length} files matching "${query}"`);
+        
+        // Add first 5 files with details
+        files.slice(0, 5).forEach(file => {
+          addMessage(`- ${file.name} (${formatFileSize(file.size)}, ${file.contentType || 'unknown'})
+  ID: ${file.id}
+  Access: project://${projectId}/file/${file.id}`);
+        });
+        
+        if (files.length > 5) {
+          addMessage(`... and ${files.length - 5} more results`);
+        }
+      } 
+      // Search by content
+      else {
+        const contentResults = await projectFilesManager.searchFileContents(
+          projectId,
+          query,
+          {
+            fileIds: processedOptions.fileIds,
+            fileExtensions: processedOptions.fileExtensions,
+            caseSensitive: processedOptions.caseSensitive,
+            maxResults: processedOptions.limit,
+            contextLines: processedOptions.contextLines || 2
+          }
+        );
+        
+        if (contentResults.matches.length === 0) {
+          addMessage(`No files found containing "${query}".`);
+          addMessage(`Try a different search term or check that your project contains text files.`);
+          return results;
+        }
+        
+        const totalMatches = contentResults.matches.reduce((sum, file) => sum + file.matchCount, 0);
+        addMessage(`Found ${totalMatches} content matches for "${query}" across ${contentResults.matches.length} files`);
+        
+        // Add first 3 files with match info
+        contentResults.matches.slice(0, 3).forEach(match => {
+          addMessage(`File: ${match.fileName} (${match.matchCount} matches, ID: ${match.fileId})`);
+          
+          // Add first 3 matches per file
+          match.contexts.slice(0, 3).forEach(ctx => {
+            addMessage(`  Line ${ctx.line}: ${ctx.preview.replace(/\[MATCH\]/g, '**').replace(/\[\/MATCH\]/g, '**')}`);
+          });
+          
+          if (match.contexts.length > 3) {
+            addMessage(`  ... and ${match.contexts.length - 3} more matches in this file`);
+          }
+        });
+        
+        if (contentResults.matches.length > 3) {
+          addMessage(`... and matches in ${contentResults.matches.length - 3} more files`);
+        }
+      }
+      
+      return results;
+    } catch (error: any) {
+      return {
+        content: [{ type: "text", text: `Error searching files: ${error.message}` }]
+      };
+    }
+  }
+);
 
 const transport = new StdioServerTransport();
 

@@ -15,6 +15,13 @@
       "when": 1746462028815,
       "tag": "0001_slimy_tarot",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1747053890942,
+      "tag": "0002_cold_avengers",
+      "breakpoints": true
     }
   ]
 }

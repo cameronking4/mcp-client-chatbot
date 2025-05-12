@@ -5,6 +5,8 @@ import { ProjectDropdown } from "@/components/project-dropdown";
 import { ProjectSystemMessagePopup } from "@/components/project-system-message-popup";
 import PromptInput from "@/components/prompt-input";
 import { ThreadDropdown } from "@/components/thread-dropdown";
+import { ProjectFileUpload } from "@/components/project-file-upload";
+import { ProjectMCPResources } from "@/components/project-mcp-resources";
 import { useChat } from "@ai-sdk/react";
 import { ChatApiSchemaRequestBody, Project } from "app-types/chat";
 import { generateUUID } from "lib/utils";
@@ -32,9 +34,10 @@ interface FeatureCardProps {
   description: string;
   icon: React.ReactNode;
   onClick?: () => void;
+  customComponent?: React.ReactNode;
 }
 
-function FeatureCard({ title, description, icon, onClick }: FeatureCardProps) {
+function FeatureCard({ title, description, icon, onClick, customComponent }: FeatureCardProps) {
   return (
     <div
       className="flex-1 border rounded-2xl p-4 hover:bg-card transition-all cursor-pointer"
@@ -51,6 +54,11 @@ function FeatureCard({ title, description, icon, onClick }: FeatureCardProps) {
           {icon}
         </div>
       </div>
+      {customComponent && (
+        <div className="mt-2">
+          {customComponent}
+        </div>
+      )}
     </div>
   );
 }
@@ -159,12 +167,17 @@ export default function ProjectPage() {
           onStop={stop}
         />
         <div className="flex my-4 mx-2 gap-4">
-          <FeatureCard
-            title="Add Files"
-            onClick={notImplementedToast}
-            description="Chat in this project can access file contents."
-            icon={<FileUp size={18} className="text-muted-foreground" />}
-          />
+          <div className="flex-1">
+            <FeatureCard
+              title="Add Files"
+              onClick={() => {}}
+              description="Chat in this project can access file contents."
+              icon={<FileUp size={18} className="text-muted-foreground" />}
+            />
+            <div className="mt-2 flex justify-center">
+              <ProjectFileUpload projectId={id as string} />
+            </div>
+          </div>
           <FeatureCard
             title="Add Instructions"
             description={
@@ -176,6 +189,11 @@ export default function ProjectPage() {
               project && setSelectedProject(project);
             }}
           />
+        </div>
+
+        {/* MCP Resources Section */}
+        <div className="mt-6 mx-2">
+          <ProjectMCPResources projectId={id as string} />
         </div>
 
         {project?.threads && project.threads.length > 0 ? (
