@@ -45,6 +45,7 @@ export const chatApiSchemaRequestBodySchema = z.object({
   message: z.any() as z.ZodType<UIMessage>,
   model: z.string().min(1).max(2000),
   toolChoice: z.enum(["auto", "none", "manual"]),
+  systemPrompt: z.string().optional(),
 });
 
 export type ChatApiSchemaRequestBody = z.infer<

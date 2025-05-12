@@ -42,7 +42,7 @@ import {
 } from "./helper";
 import { generateTitleFromUserMessageAction } from "./actions";
 
-export const maxDuration = 120;
+export const maxDuration = 600;
 
 export async function POST(request: Request) {
   try {
@@ -60,6 +60,7 @@ export async function POST(request: Request) {
       model: modelName,
       toolChoice,
       projectId,
+      systemPrompt: defaultSystemPrompt,
     } = chatApiSchemaRequestBodySchema.parse(json);
 
     const model = customModelProvider.getModel(modelName);
@@ -155,8 +156,7 @@ export async function POST(request: Request) {
         }
 
         const systemPrompt = mergeSystemPrompt(
-          thread?.instructions?.systemPrompt ||
-            "You are a friendly assistant! Keep your responses concise and helpful.",
+          thread?.instructions?.systemPrompt || defaultSystemPrompt,
           SYSTEM_TIME_PROMPT(session),
         );
 
@@ -164,7 +164,7 @@ export async function POST(request: Request) {
           model,
           system: systemPrompt,
           messages,
-          maxSteps: 10,
+          maxSteps: 1000,
           experimental_continueSteps: true,
           experimental_transform: smoothStream({ chunking: "word" }),
           tools,

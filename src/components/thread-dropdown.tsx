@@ -2,7 +2,7 @@
 import { deleteThreadAction, updateThreadAction } from "@/app/api/chat/actions";
 import { appStore } from "@/app/store";
 import { useLatest } from "@/hooks/use-latest";
-import { Loader, PencilLine, Trash, WandSparkles } from "lucide-react";
+import { Loader, PencilLine, Sparkles, Trash } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { type PropsWithChildren, useState } from "react";
 import { toast } from "sonner";
@@ -114,8 +114,8 @@ export function ThreadDropdown({
                   onClose={() => setOpen(false)}
                 >
                   <div className="flex items-center gap-2 w-full">
-                    <WandSparkles className="text-foreground" />
-                    <span className="mr-4">Summarize as Project</span>
+                    <Sparkles className="text-foreground" />
+                    <span className="mr-4">Transform into project</span>
                   </div>
                 </CreateProjectWithThreadPopup>
               </CommandItem>
@@ -126,7 +126,7 @@ export function ThreadDropdown({
                 >
                   <div className="flex items-center gap-2 w-full px-2 py-1 rounded">
                     <PencilLine className="text-foreground" />
-                    <span className="mr-4">Re Name</span>
+                    <span className="mr-4">Rename</span>
                   </div>
                 </UpdateThreadNameDialog>
               </CommandItem>

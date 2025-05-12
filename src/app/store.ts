@@ -13,6 +13,7 @@ export interface AppState {
 
   toolChoice: "auto" | "none" | "manual";
   model: string;
+  systemPrompt: string;
 }
 
 export interface AppDispatch {
@@ -30,6 +31,7 @@ export const appStore = create<AppState & AppDispatch>()(
       toolChoice: "auto",
       modelList: [],
       model: DEFAULT_MODEL,
+      systemPrompt: "You are a friendly assistant! Keep your responses concise and helpful. The current time is " + new Date().toLocaleString(),
       mutate: set,
     }),
     {
@@ -37,6 +39,7 @@ export const appStore = create<AppState & AppDispatch>()(
       partialize: (state) => ({
         model: state.model || DEFAULT_MODEL,
         toolChoice: state.toolChoice || "auto",
+        systemPrompt: state.systemPrompt || "You are a friendly assistant! Keep your responses concise and helpful. The current time is " + new Date().toLocaleString(),
       }),
     },
   ),

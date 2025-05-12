@@ -10,6 +10,7 @@ import {
   ChevronDownIcon,
   RefreshCw,
   X,
+  Coins,
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "ui/tooltip";
 import { Button } from "ui/button";
@@ -42,6 +43,62 @@ type MessagePart = UIMessage["parts"][number];
 type TextMessagePart = Extract<MessagePart, { type: "text" }>;
 type AssistMessagePart = Extract<MessagePart, { type: "text" }>;
 type ToolMessagePart = Extract<MessagePart, { type: "tool-invocation" }>;
+
+// Helper function for extracting token usage from message annotations
+function getTokenUsageFromAnnotations(annotations?: any[]): number | null {
+  if (!annotations?.length) return null;
+  
+  const annotation = annotations.find(
+    (ann) => (ann as ChatMessageAnnotation).usageTokens !== undefined
+  ) as ChatMessageAnnotation | undefined;
+  
+  return annotation?.usageTokens ?? null;
+}
+
+// Helper function for formatting token usage
+function formatTokenUsage(tokenUsage: number | null): string | null {
+  if (tokenUsage === null || tokenUsage === undefined) return null;
+  
+  // Format large numbers with k suffix (e.g., 1500 -> 1.5k)
+  if (tokenUsage >= 1000) {
+    return `${(tokenUsage / 1000).toFixed(1)}k`;
+  }
+  
+  return tokenUsage.toString();
+}
+
+// Token usage display component
+function TokenUsageButton({ tokenUsage }: { tokenUsage: number | null }) {
+  const formattedTokenUsage = useMemo(
+    () => formatTokenUsage(tokenUsage),
+    [tokenUsage]
+  );
+
+  if (tokenUsage === null) return null;
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <div className="relative">
+          <Button
+            variant="ghost"
+            size="icon"
+            className={cn(
+              "size-3! p-4! opacity-0 group-hover/message:opacity-100",
+            )}
+          >
+            <Coins />
+          </Button>
+        </div>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">
+        {formattedTokenUsage 
+          ? `${formattedTokenUsage} tokens used` 
+          : "Token usage not available"}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
 
 interface UserMessagePartProps {
   part: TextMessagePart;
@@ -114,6 +171,12 @@ export const UserMessagePart = ({
       ),
     );
   }, [message.annotations]);
+  
+  // Extract token usage from message annotations
+  const tokenUsage = useMemo(
+    () => getTokenUsageFromAnnotations(message.annotations),
+    [message.annotations]
+  );
 
   useEffect(() => {
     if (status === "submitted" && isLast) {
@@ -188,6 +251,7 @@ export const UserMessagePart = ({
               </TooltipTrigger>
               <TooltipContent side="bottom">Copy</TooltipContent>
             </Tooltip>
+            <TokenUsageButton tokenUsage={tokenUsage} />
           </>
         )}
       </div>
@@ -208,6 +272,12 @@ export const AssistMessagePart = ({
 }: AssistMessagePartProps) => {
   const { copied, copy } = useCopy();
   const [isLoading, setIsLoading] = useState(false);
+
+  // Extract token usage from message annotations
+  const tokenUsage = useMemo(
+    () => getTokenUsageFromAnnotations(message.annotations),
+    [message.annotations]
+  );
 
   const handleModelChange = (model: string) => {
     safe(() => setIsLoading(true))
@@ -287,6 +357,7 @@ export const AssistMessagePart = ({
             </TooltipTrigger>
             <TooltipContent>Change Model</TooltipContent>
           </Tooltip>
+          <TokenUsageButton tokenUsage={tokenUsage} />
         </div>
       )}
     </div>

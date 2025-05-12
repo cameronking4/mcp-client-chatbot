@@ -16,15 +16,16 @@ export async function POST(request: Request) {
       return redirect("/login");
     }
 
-    const { messages, model: modelName } = json as {
+    const { messages, model: modelName, systemPrompt: defaultSystemPrompt = "You are a friendly assistant! Keep your responses concise and helpful." + SYSTEM_TIME_PROMPT(session) } = json as {
       messages: Message[];
       model: string;
+      systemPrompt?: string;
     };
 
     const model = customModelProvider.getModel(modelName);
 
     const systemPrompt = mergeSystemPrompt(
-      "You are a friendly assistant! Keep your responses concise and helpful.",
+      defaultSystemPrompt,
       SYSTEM_TIME_PROMPT(session),
     );
 

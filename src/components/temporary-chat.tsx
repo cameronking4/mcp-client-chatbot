@@ -22,10 +22,13 @@ import { X } from "lucide-react";
 import { Separator } from "ui/separator";
 import { useLatest } from "@/hooks/use-latest";
 import { UIMessage } from "ai";
+import { useShallow } from "zustand/shallow";
 
 export default function TemporaryChat({ children }: PropsWithChildren) {
   const [open, setOpen] = useState(false);
-  const model = appStore((state) => state.model);
+  const [model, systemPrompt] = appStore(
+    useShallow((state) => [state.model, state.systemPrompt])
+  );
 
   const {
     messages,
@@ -41,6 +44,7 @@ export default function TemporaryChat({ children }: PropsWithChildren) {
     experimental_throttle: 100,
     body: {
       model,
+      systemPrompt,
     },
     onError: () => {
       toast.error("An error occured, please try again!");

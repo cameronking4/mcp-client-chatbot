@@ -11,7 +11,7 @@ import {
 import { SidebarGroupContent, SidebarMenu, SidebarMenuItem } from "ui/sidebar";
 import { SidebarGroup } from "ui/sidebar";
 import { ThreadDropdown } from "../thread-dropdown";
-import { MoreHorizontal, Trash } from "lucide-react";
+import { Eye, MoreHorizontal, Search, Trash, WandSparkles } from "lucide-react";
 import { useMounted } from "@/hooks/use-mounted";
 import { appStore } from "@/app/store";
 import { Button } from "ui/button";
@@ -30,8 +30,18 @@ import { useShallow } from "zustand/shallow";
 import { useRouter } from "next/navigation";
 import useSWR, { mutate } from "swr";
 import { handleErrorWithToast } from "ui/shared-toast";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { signOut } from "next-auth/react";
+import {
+  CommandDialog,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+  CommandSeparator,
+} from "@/components/ui/command";
+import { CreateProjectWithThreadPopup } from "../create-project-with-thread-popup";
 
 export function AppSidebarThreads() {
   const mounted = useMounted();
@@ -39,6 +49,9 @@ export function AppSidebarThreads() {
   const [storeMutate, currentThreadId] = appStore(
     useShallow((state) => [state.mutate, state.currentThreadId]),
   );
+
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
 
   const {
     data: threadList,
@@ -49,6 +62,7 @@ export function AppSidebarThreads() {
     fallbackData: [],
     onSuccess: (data) => storeMutate({ threadList: data }),
   });
+  
   const handleDeleteAllThreads = async () => {
     await toast.promise(deleteThreadsAction(), {
       loading: "Deleting all threads...",
@@ -61,6 +75,7 @@ export function AppSidebarThreads() {
       error: "Failed to delete all threads",
     });
   };
+  
   useEffect(() => {
     if (error) {
       signOut({
@@ -68,6 +83,17 @@ export function AppSidebarThreads() {
       });
     }
   }, [error]);
+
+  const filteredThreads = searchQuery
+    ? threadList?.filter((thread) =>
+        thread.title.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : threadList || [];
+
+  // const handleNavigateToChat = (threadId: string) => {
+  //   router.push(`/chat/${threadId}`);
+  //   setSearchOpen(false);
+  // };
 
   return (
     <SidebarGroup>
@@ -77,7 +103,7 @@ export function AppSidebarThreads() {
             <SidebarGroupLabel className="">
               <h4 className="text-xs text-muted-foreground">Recent Chats</h4>
               <div className="flex-1" />
-
+              
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button
@@ -98,6 +124,14 @@ export function AppSidebarThreads() {
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="opacity-0 group-hover/threads:opacity-100 transition-opacity"
+                onClick={() => setSearchOpen(true)}
+              >
+                <Search />
+              </Button>
             </SidebarGroupLabel>
 
             {isLoading ? (
@@ -141,6 +175,96 @@ export function AppSidebarThreads() {
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarGroupContent>
+
+      <CommandDialog
+        open={searchOpen}
+        onOpenChange={setSearchOpen}
+        title="Search Chats"
+        description="Search through your chat history"
+      >
+        <CommandInput 
+          placeholder="Search chats..." 
+          value={searchQuery}
+          onValueChange={setSearchQuery}
+        />
+        <CommandList>
+          {searchQuery !== "" && filteredThreads.length === 0 && (
+            <CommandEmpty>No chats found.</CommandEmpty>
+          )}
+          {searchQuery === "" && filteredThreads.length === 0 && (
+            <CommandEmpty>No chats available.</CommandEmpty>
+          )}
+          {filteredThreads.length > 0 && (
+            <CommandGroup heading="Chats">
+              {filteredThreads.map((thread) => (
+                <>
+                <CommandItem
+                  key={thread.id}
+                  // onSelect={() => handleNavigateToChat(thread.id)}
+                  className="flex items-center justify-between"
+                >
+                  <div className="flex items-center gap-2">
+                    <p>{thread.title}</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        router.push(`/chat/${thread.id}`);
+                        setSearchOpen(false);
+                      }}
+                    >
+                      <Eye className="h-4 w-4" />
+                    </Button>
+                    <CreateProjectWithThreadPopup
+                      threadId={thread.id}
+                      onClose={() => setSearchOpen(false)}
+                    >
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                        }}
+                      >
+                        <WandSparkles className="h-4 w-4" />
+                      </Button>
+                    </CreateProjectWithThreadPopup>
+                    <ThreadDropdown
+                      side="bottom"
+                      threadId={thread.id}
+                      beforeTitle={thread.title}
+                      onDeleted={() => {
+                        if (filteredThreads.length <= 1) {
+                          setSearchOpen(false);
+                        }
+                        setSearchQuery("");
+                      }}
+                    >
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                        }}
+                      >
+                        <MoreHorizontal className="h-4 w-4" />
+                      </Button>
+                    </ThreadDropdown>
+                  </div>
+                </CommandItem>
+                <CommandSeparator/>
+                </>
+              ))}
+            </CommandGroup>
+          )}
+        </CommandList>
+      </CommandDialog>
     </SidebarGroup>
   );
 }

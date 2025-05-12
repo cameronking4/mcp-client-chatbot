@@ -39,13 +39,13 @@ export function AppSidebar() {
             <SidebarMenuButton asChild>
               <Link href="/">
                 <MCPIcon className="size-4 fill-foreground" />
-                <h4 className="font-bold">mcp/chat-bot</h4>
+                <h4 className="font-bold">mcp/workbench</h4>
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>
-      <SidebarContent className="mt-6">
+      <SidebarContent className="mt-2">
         <AppSidebarMenus isOpen={open} />
         <AppSidebarProjects />
         <AppSidebarThreads />

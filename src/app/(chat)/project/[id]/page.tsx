@@ -8,6 +8,7 @@ import { ThreadDropdown } from "@/components/thread-dropdown";
 import { useChat } from "@ai-sdk/react";
 import { ChatApiSchemaRequestBody, Project } from "app-types/chat";
 import { generateUUID } from "lib/utils";
+import { formatTimeAgo } from "lib/date-utils";
 
 import {
   Loader,
@@ -180,10 +181,12 @@ export default function ProjectPage() {
         {project?.threads && project.threads.length > 0 ? (
           <div className="mt-6 mb-4">
             <h3 className="text-lg font-medium px-4 mb-3 flex items-center gap-2 text-muted-foreground">
-              <span>Conversation List</span>
+              <span>Recent Conversations</span>
             </h3>
             <div className="flex flex-col gap-2 px-2">
-              {project.threads.map((thread) => (
+              {[...project.threads]
+                .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+                .map((thread) => (
                 <div
                   className="flex gap-1 group/project-thread"
                   key={thread.id}
@@ -197,9 +200,14 @@ export default function ProjectPage() {
                     <div className="flex-1 truncate">
                       <div className="font-medium truncate">
                         {thread.title}
-                        {thread.title}
                       </div>
                     </div>
+                    <span 
+                      className="text-xs text-muted-foreground ml-2 whitespace-nowrap"
+                      title={thread.createdAt.toLocaleString()}
+                    >
+                      {formatTimeAgo(thread.createdAt)}
+                    </span>
                   </Link>
                   <ThreadDropdown
                     threadId={thread.id}
