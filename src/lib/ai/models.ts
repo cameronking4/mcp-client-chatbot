@@ -16,6 +16,7 @@ export const allModels = {
   azure: {
     "4.1": azure("gpt-4.1"),
     "4o": azure("gpt-4o"),
+    "4o-mini": azure("gpt-4o-mini"),
     "o4-mini": azure("o4-mini"),
   },
   openai: {

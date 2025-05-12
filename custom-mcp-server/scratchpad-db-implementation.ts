@@ -35,9 +35,55 @@ export class InMemoryScratchpad {
     
     return keys;
   }
+  
+  // This method does not return a union type
+  listKeysSync(namespaceId: string): string[] {
+    const namespacePrefix = `${namespaceId}:`;
+    const keys: string[] = [];
+    
+    for (const fullKey of this.storage.keys()) {
+      if (fullKey.startsWith(namespacePrefix)) {
+        keys.push(fullKey.substring(namespacePrefix.length));
+      }
+    }
+    
+    return keys;
+  }
 
   async deleteValue(namespaceId: string, key: string): Promise<boolean> {
     return this.storage.delete(this.getKey(namespaceId, key));
+  }
+  
+  /**
+   * List all unique namespaces used in the storage
+   */
+  async listNamespaces(): Promise<string[]> {
+    const namespaces = new Set<string>();
+    
+    for (const fullKey of this.storage.keys()) {
+      const separatorIndex = fullKey.indexOf(':');
+      if (separatorIndex > 0) {
+        const namespace = fullKey.substring(0, separatorIndex);
+        namespaces.add(namespace);
+      }
+    }
+    
+    return Array.from(namespaces);
+  }
+  
+  // This method does not return a union type
+  listNamespacesSync(): string[] {
+    const namespaces = new Set<string>();
+    
+    for (const fullKey of this.storage.keys()) {
+      const separatorIndex = fullKey.indexOf(':');
+      if (separatorIndex > 0) {
+        const namespace = fullKey.substring(0, separatorIndex);
+        namespaces.add(namespace);
+      }
+    }
+    
+    return Array.from(namespaces);
   }
 }
 

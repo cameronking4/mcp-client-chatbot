@@ -1,4 +1,24 @@
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+/**
+ * Custom MCP Server with Scratchpad Resources
+ * 
+ * This server implements the Model Context Protocol (MCP) and provides:
+ * 
+ * 1. MCP Resources:
+ *    - scratchpad://namespaces - Lists all available namespaces
+ *    - scratchpad://{namespace}/keys - Lists all keys in a specific namespace
+ *    - scratchpad://{namespace}/{key} - Gets the value of a specific key in a namespace
+ * 
+ * 2. MCP Tools:
+ *    - get_weather - Gets weather information for a location
+ *    - scratchpad_memory - Manages data in the scratchpad (store, get, list, delete)
+ *    - data_parse, data_count_values, etc. - Data analysis tools
+ * 
+ * Resources are read-only and provide context to the client, while tools allow
+ * actions to be performed. This follows the MCP pattern where resources are for
+ * "what the client should know" and tools are for "what the client can do".
+ */
+
+import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { memoryStore } from "./scratchpad-db-implementation.js";
@@ -8,6 +28,84 @@ const server = new McpServer({
   name: "custom-mcp-server",
   version: "0.0.1",
 });
+
+// Static resource - list of available namespaces
+server.resource(
+  "scratchpad-namespaces",
+  "scratchpad://namespaces",
+  async (uri) => {
+    try {
+      const namespaces = await memoryStore.listNamespacesSync();
+      
+      return {
+        contents: [{
+          uri: uri.href,
+          mimeType: "application/json",
+          text: `{"namespaces":${JSON.stringify(namespaces)}}`
+        }]
+      };
+    } catch (error: any) {
+      console.error("Error retrieving namespaces:", error);
+      throw new Error("Failed to retrieve namespaces");
+    }
+  }
+);
+
+// Template resource - list keys in a namespace
+server.resource(
+  "scratchpad-namespace-keys",
+  new ResourceTemplate("scratchpad://{namespace}/keys", { list: undefined }),
+  async (uri, params) => {
+    try {
+      // Ensure namespace is treated as a string
+      const namespace = params.namespace as string;
+      const keys = memoryStore.listKeysSync(namespace);
+      
+      return {
+        contents: [{
+          uri: uri.href,
+          mimeType: "application/json",
+          text: `{"keys":${JSON.stringify(keys)}}`
+        }]
+      };
+    } catch (error: any) {
+      console.error(`Error retrieving keys for namespace ${params.namespace}:`, error);
+      throw new Error(`Failed to retrieve keys for namespace: ${params.namespace}`);
+    }
+  }
+);
+
+// Template resource - get a specific value
+server.resource(
+  "scratchpad-value",
+  new ResourceTemplate("scratchpad://{namespace}/{key}", { list: undefined }),
+  async (uri, params) => {
+    try {
+      // Ensure params are treated as strings
+      const namespace = params.namespace as string;
+      const key = params.key as string;
+      
+      const value = await memoryStore.getValue(namespace, key);
+      if (value === undefined) {
+        throw new Error(`Resource not found: ${uri.href}`);
+      }
+      
+      return {
+        contents: [{
+          uri: uri.href,
+          mimeType: "application/json",
+          text: value
+        }]
+      };
+    } catch (error: any) {
+      console.error(`Error retrieving value for ${params.namespace}/${params.key}:`, error);
+      if (error.message?.includes("Resource not found")) {
+        throw error;
+      }
+      throw new Error(`Failed to retrieve value for ${params.namespace}/${params.key}`);
+    }
+  }
+);
 
 server.tool(
   "get_weather",
@@ -65,6 +163,10 @@ server.tool(
               type: "text",
               text: `Successfully stored information with key: "${key}"`,
             },
+            {
+              type: "text",
+              text: `You can access this data as a resource using URI: scratchpad://${namespaceId}/${key}`,
+            },
           ],
         };
 
@@ -96,6 +198,10 @@ server.tool(
               type: "text",
               text: storedValue,
             },
+            {
+              type: "text",
+              text: `This data is also available as a resource using URI: scratchpad://${namespaceId}/${key}`,
+            },
           ],
         };
 
@@ -116,6 +222,10 @@ server.tool(
             {
               type: "text",
               text: `Available keys: ${keys.join(", ")}`,
+            },
+            {
+              type: "text",
+              text: `These can be accessed as resources using URIs like: scratchpad://${namespaceId}/{key}`,
             },
           ],
         };
