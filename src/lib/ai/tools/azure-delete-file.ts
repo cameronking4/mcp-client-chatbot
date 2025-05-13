@@ -1,7 +1,6 @@
 import { tool as createTool } from "ai";
 import { z } from "zod";
 import { wait } from "lib/utils";
-import { AzureStorageClient } from "lib/azure-storage";
 
 export const azureDeleteFileTool = createTool({
   description: "Delete a file from Azure Storage (will prompt user to confirm)",

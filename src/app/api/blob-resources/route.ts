@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { BlobServiceClient, ContainerClient } from '@azure/storage-blob';
+import { BlobServiceClient } from '@azure/storage-blob';
 
 // Get Azure Storage connection string from environment
 const connectionString = process.env.AZURE_STORAGE_CONNECTION_STRING;

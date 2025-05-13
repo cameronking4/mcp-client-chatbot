@@ -1,7 +1,7 @@
 import { tool as createTool } from "ai";
 import { z } from "zod";
 import { wait } from "lib/utils";
-import { AzureStorageClient, azureStorage } from "lib/azure-storage";
+import { AzureStorageClient } from "lib/azure-storage";
 import { BlobSASPermissions, BlobServiceClient, SASProtocol } from "@azure/storage-blob";
 
 export const azureImportFileTool = createTool({
