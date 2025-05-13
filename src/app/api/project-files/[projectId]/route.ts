@@ -11,11 +11,10 @@ import { generateUUID } from '../../../../lib/utils';
  */
 export async function GET(
   req: NextRequest,
-  { params }: { params: { projectId: string } }
+  { params }: { params: Promise<{ projectId: string }> }
 ) {
   try {
-    // Fix for synchronous parameter access - make a copy of the param
-    const projectId = params.projectId;
+    const { projectId } = await params;
     
     if (!projectId) {
       return NextResponse.json(
@@ -81,7 +80,7 @@ function formatFileSize(bytes: number): string {
 // Handler for POST request to upload a file
 export async function POST(
   request: NextRequest,
-  { params }: { params: { projectId: string } }
+  { params }: { params: Promise<{ projectId: string }> }
 ) {
   try {
     const session = await auth();
@@ -93,8 +92,7 @@ export async function POST(
       return NextResponse.json({ error: 'Azure Storage not configured' }, { status: 500 });
     }
 
-    // Cast params as a constant to avoid the Next.js warning
-    const { projectId } = params;
+    const { projectId } = await params;
     
     // Initialize Azure Storage container
     await azureStorage.initialize();
@@ -145,7 +143,7 @@ export async function POST(
 // Handler for DELETE request to delete a file
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { projectId: string } }
+  { params }: { params: Promise<{ projectId: string }> }
 ) {
   try {
     const session = await auth();
@@ -157,8 +155,7 @@ export async function DELETE(
       return NextResponse.json({ error: 'Azure Storage not configured' }, { status: 500 });
     }
 
-    // Cast params as a constant to avoid the Next.js warning
-    const { projectId } = params;
+    const { projectId } = await params;
     
     const { fileId } = await request.json();
     
@@ -183,4 +180,4 @@ export async function DELETE(
     console.error('Error deleting file:', error);
     return NextResponse.json({ error: 'Failed to delete file' }, { status: 500 });
   }
-} 
+}

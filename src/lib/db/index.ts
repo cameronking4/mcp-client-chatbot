@@ -1,4 +1,3 @@
-import { pgDb } from './pg/db.pg';
 import * as schema from './pg/schema.pg';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { Pool } from 'pg';

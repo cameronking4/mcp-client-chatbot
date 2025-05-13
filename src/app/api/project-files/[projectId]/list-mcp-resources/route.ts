@@ -4,16 +4,17 @@ import * as schema from "@/lib/db/pg/schema.pg";
 import { eq } from "drizzle-orm";
 import { azureStorage, ProjectFile } from "@/lib/azure-storage";
 
+export const dynamic = 'force-dynamic';
 /**
  * API route to directly test MCP resource files
  * This will list all files in a project and confirm they're available
  */
 export async function GET(
   req: NextRequest,
-  { params }: { params: { projectId: string } }
+  { params }: { params: Promise<{ projectId: string }> }
 ) {
   try {
-    const { projectId } = params;
+    const { projectId } = await params;
     
     if (!projectId) {
       return NextResponse.json(
@@ -110,4 +111,4 @@ export async function GET(
       { status: 500 }
     );
   }
-} 
+}

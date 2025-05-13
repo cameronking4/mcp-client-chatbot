@@ -2,7 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { azureStorage } from '../../../../../../lib/azure-storage';
 import { db } from '@/lib/db';
 import * as schema from '@/lib/db/pg/schema.pg';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
+
+// Force dynamic rendering for this route
+export const dynamic = 'force-dynamic';
 
 /**
  * API route for downloading files from Azure Storage
@@ -10,26 +13,29 @@ import { eq } from 'drizzle-orm';
  */
 export async function GET(
   request: NextRequest,
-  { params }: { params: { projectId: string; fileId: string } }
+  { params }: { params: Promise<{ projectId: string; fileId: string }> }
 ) {
   try {
     // No auth check for downloads to allow LLMs to access files directly
     // You can add authentication if needed for sensitive files
     
-    const { projectId, fileId } = params;
+    // Safe extraction of params
+    const { projectId, fileId } = await params;
     
     if (!azureStorage) {
       return NextResponse.json({ error: 'Azure Storage not configured' }, { status: 500 });
     }
     
     // Get file metadata
-    let fileMetadata;
+    let fileMetadata: schema.ProjectFileEntity | null = null;
     try {
       // Try to get file metadata from the database
       const files = await db.select().from(schema.ProjectFileSchema)
         .where(
-          eq(schema.ProjectFileSchema.id, fileId) && 
-          eq(schema.ProjectFileSchema.projectId, projectId)
+          and(
+            eq(schema.ProjectFileSchema.id, fileId),
+            eq(schema.ProjectFileSchema.projectId, projectId)
+          )
         )
         .execute();
         
@@ -37,7 +43,19 @@ export async function GET(
         fileMetadata = files[0];
       } else {
         // If not in database, try to get from Azure directly
-        fileMetadata = await azureStorage.getFileMetadata(projectId, fileId);
+        const azureMetadata = await azureStorage.getFileMetadata(projectId, fileId);
+        if (azureMetadata) {
+          fileMetadata = {
+            id: azureMetadata.id || fileId,
+            projectId: projectId,
+            name: azureMetadata.name || fileId,
+            contentType: azureMetadata.contentType || 'application/octet-stream',
+            size: azureMetadata.size || 0,
+            blobPath: `${projectId}/${fileId}`,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          };
+        }
       }
     } catch (error) {
       console.error('Error fetching file metadata:', error);
@@ -78,4 +96,4 @@ export async function GET(
     console.error('Error handling file download:', error);
     return NextResponse.json({ error: 'Failed to download file' }, { status: 500 });
   }
-} 
+}
