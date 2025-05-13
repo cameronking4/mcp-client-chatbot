@@ -118,17 +118,43 @@ export class MCPClient {
         const config = MCPSseConfigZodSchema.parse(this.serverConfig);
         const url = new URL(config.url);
         this.log.info(`Using SSE transport for ${this.name} with URL: ${url.toString()}`);
-        this.log.info(`Environment: ${process.env.NODE_ENV}, Vercel: ${process.env.VERCEL}`);
         
-        // Add headers for debugging
+        // Add more detailed logging for Vercel environment
+        const isVercel = process.env.VERCEL === '1';
+        this.log.info(`Environment: ${process.env.NODE_ENV}, Vercel: ${isVercel ? 'Yes' : 'No'}`);
+        
+        // Prepare headers with better error handling
         const headers = config.headers || {};
         this.log.info(`SSE Headers: ${JSON.stringify(headers)}`);
         
+        // Create SSE transport with improved configuration
         transport = new SSEClientTransport(url, {
           requestInit: {
             headers: headers,
-          },
+            // Add timeout and credentials options for better network handling
+            credentials: 'include',
+            cache: 'no-store',
+            mode: 'cors',
+          }
+          // Retry configuration is not supported in SSEClientTransport
+          // We would need to implement custom retry logic elsewhere
         });
+        
+        // Add connection verification
+        this.log.info(`Verifying SSE endpoint availability: ${url.toString()}`);
+        try {
+          const testResponse = await fetch(url.toString(), {
+            method: 'HEAD',
+            headers: headers,
+          });
+          this.log.info(`SSE endpoint status: ${testResponse.status} ${testResponse.statusText}`);
+          if (!testResponse.ok) {
+            this.log.warn(`SSE endpoint may not be available: ${testResponse.status}`);
+          }
+        } catch (fetchError) {
+          this.log.warn(`Could not verify SSE endpoint: ${fetchError}`);
+          // Continue anyway, as the actual SSE connection might still work
+        }
       } else {
         throw new Error("Invalid server config");
       }
@@ -141,6 +167,14 @@ export class MCPClient {
         );
       } catch (connectionError) {
         this.log.error(`Failed to connect to MCP server ${this.name}:`, connectionError);
+        // Add more detailed error information
+        if (isMaybeSseConfig(this.serverConfig)) {
+          this.log.error(`SSE connection failed. URL: ${this.serverConfig.url}`);
+          if (connectionError instanceof Error) {
+            this.log.error(`Error details: ${connectionError.message}`);
+            this.log.error(`Stack trace: ${connectionError.stack}`);
+          }
+        }
         throw connectionError;
       }
       

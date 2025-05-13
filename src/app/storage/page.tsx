@@ -1,6 +1,7 @@
 import { BlobStorageBrowser } from "@/components/blob-storage-browser";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
+import Link from "next/link";
 
 export const metadata = {
   title: "Azure Storage Browser",
@@ -17,10 +18,10 @@ export default function StoragePage() {
           asChild
           className="flex items-center text-sm ml-6"
         >
-          <a href="/">
+          <Link href="/">
             <ArrowLeft className="mr-2 h-4 w-4" />
             Back to Home
-          </a>
+          </Link>
         </Button>
       </div>
       <h1 className="text-2xl font-bold mb-6">Azure Storage Browser</h1>
