@@ -93,6 +93,7 @@ export class MCPClient {
       let transport: Transport;
       // Create appropriate transport based on server config type
       if (isMaybeStdioConfig(this.serverConfig)) {
+        this.log.info(`Using stdio transport for ${this.name}`);
         const config = MCPStdioConfigZodSchema.parse(this.serverConfig);
         transport = new StdioClientTransport({
           command: config.command,
@@ -112,54 +113,78 @@ export class MCPClient {
       } else if (isMaybeSseConfig(this.serverConfig)) {
         const config = MCPSseConfigZodSchema.parse(this.serverConfig);
         const url = new URL(config.url);
+        this.log.info(`Using SSE transport for ${this.name} with URL: ${url.toString()}`);
+        this.log.info(`Environment: ${process.env.NODE_ENV}, Vercel: ${process.env.VERCEL}`);
+        
+        // Add headers for debugging
+        const headers = config.headers || {};
+        this.log.info(`SSE Headers: ${JSON.stringify(headers)}`);
+        
         transport = new SSEClientTransport(url, {
           requestInit: {
-            headers: config.headers,
+            headers: headers,
           },
         });
       } else {
         throw new Error("Invalid server config");
       }
 
-      await client.connect(transport);
-      this.log.info(
-        `Connected to MCP server in ${((Date.now() - startedAt) / 1000).toFixed(2)}s`,
-      );
+      this.log.info(`Attempting to connect to MCP server ${this.name}...`);
+      try {
+        await client.connect(transport);
+        this.log.info(
+          `Connected to MCP server ${this.name} in ${((Date.now() - startedAt) / 1000).toFixed(2)}s`,
+        );
+      } catch (connectionError) {
+        this.log.error(`Failed to connect to MCP server ${this.name}:`, connectionError);
+        throw connectionError;
+      }
+      
       this.isConnected = true;
       this.error = undefined;
       this.client = client;
-      const toolResponse = await client.listTools();
-      this.toolInfo = toolResponse.tools.map(
-        (tool) =>
-          ({
-            name: tool.name,
-            description: tool.description,
-            inputSchema: tool.inputSchema,
-          }) as MCPToolInfo,
-      );
-
-      // Create AI SDK tool wrappers for each MCP tool
-      this.tools = toolResponse.tools.reduce((prev, _tool) => {
-        const parameters = jsonSchema(
-          toAny({
-            ..._tool.inputSchema,
-            properties: _tool.inputSchema.properties ?? {},
-            additionalProperties: false,
-          }),
+      
+      try {
+        this.log.info(`Listing tools for ${this.name}...`);
+        const toolResponse = await client.listTools();
+        this.log.info(`Received ${toolResponse.tools.length} tools from ${this.name}`);
+        
+        this.toolInfo = toolResponse.tools.map(
+          (tool) =>
+            ({
+              name: tool.name,
+              description: tool.description,
+              inputSchema: tool.inputSchema,
+            }) as MCPToolInfo,
         );
-        prev[_tool.name] = tool({
-          parameters,
-          description: _tool.description,
-          execute: (params, options: ToolExecutionOptions) => {
-            options?.abortSignal?.throwIfAborted();
-            return this.callTool(_tool.name, params);
-          },
-        });
-        return prev;
-      }, {});
+
+        // Create AI SDK tool wrappers for each MCP tool
+        this.tools = toolResponse.tools.reduce((prev, _tool) => {
+          const parameters = jsonSchema(
+            toAny({
+              ..._tool.inputSchema,
+              properties: _tool.inputSchema.properties ?? {},
+              additionalProperties: false,
+            }),
+          );
+          prev[_tool.name] = tool({
+            parameters,
+            description: _tool.description,
+            execute: (params, options: ToolExecutionOptions) => {
+              options?.abortSignal?.throwIfAborted();
+              return this.callTool(_tool.name, params);
+            },
+          });
+          return prev;
+        }, {});
+      } catch (toolError) {
+        this.log.error(`Failed to list tools for ${this.name}:`, toolError);
+        throw toolError;
+      }
+      
       this.scheduleAutoDisconnect();
     } catch (error) {
-      this.log.error(error);
+      this.log.error(`Error in MCP client ${this.name}:`, error);
       this.isConnected = false;
       this.error = error;
     }

@@ -63,6 +63,12 @@ import { MCPToolInfo } from "app-types/mcp";
 import { Label } from "ui/label";
 import { safe } from "ts-safe";
 import { useObjectState } from "@/hooks/use-object-state";
+import {
+  rememberMcpBindingAction,
+  saveMcpServerBindingsAction,
+} from "@/app/api/chat/actions";
+import { MCPServerBindingOwnerType } from "app-types/mcp";
+import { nanoid } from "nanoid";
 
 // Type definitions
 type SchemaProperty = {
@@ -377,8 +383,55 @@ export default function Page() {
   const [isCallLoading, setIsCallLoading] = useState(false);
   const [showInputSchema, setShowInputSchema] = useState(false);
 
+  // Create a specific test ID for this server
+  const testId = useMemo(() => `test-${name}-${nanoid(6)}`, [name]);
+
   const { data: client, isLoading } = useSWR(`/mcp/${name}`, () =>
     selectMcpClientAction(name as string),
+  );
+
+  // Get or create the binding for this test route
+  useSWR(
+    client ? `/mcp-binding/test/${testId}` : null,
+    async () => {
+      // Try to get existing binding
+      const existingBinding = await rememberMcpBindingAction(
+        testId,
+        MCPServerBindingOwnerType.Thread
+      );
+
+      // If binding exists, return it
+      if (existingBinding && existingBinding[name as string]) {
+        console.log("Found existing binding for test:", existingBinding);
+        return existingBinding;
+      }
+
+      // If no binding or missing this server, create a new one with all tools
+      if (client?.toolInfo?.length) {
+        console.log("Creating new binding for test with all tools");
+        const newBinding = {
+          [name as string]: {
+            serverName: name as string,
+            allowedTools: client.toolInfo.map(tool => tool.name)
+          }
+        };
+
+        // Save the binding
+        await saveMcpServerBindingsAction({
+          ownerId: testId,
+          ownerType: MCPServerBindingOwnerType.Thread,
+          config: newBinding
+        });
+
+        return newBinding;
+      }
+
+      return null;
+    },
+    {
+      revalidateOnFocus: false,
+      refreshInterval: 0
+    }
   );
 
   const filteredTools = useMemo(() => {

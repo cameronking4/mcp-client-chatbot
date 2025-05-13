@@ -79,9 +79,10 @@ export class AzureStorageClient {
     
     // Convert stream to buffer
     const chunks: Buffer[] = [];
-    // @ts-ignore: Stream type issues
-    for await (const chunk of downloadResponse.readableStreamBody) {
-      chunks.push(Buffer.from(chunk));
+    if (downloadResponse.readableStreamBody) {
+      for await (const chunk of downloadResponse.readableStreamBody) {
+        chunks.push(Buffer.from(chunk));
+      }
     }
     
     return Buffer.concat(chunks);

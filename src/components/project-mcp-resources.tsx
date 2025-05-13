@@ -301,9 +301,9 @@ export function ProjectMCPResources({ projectId }: ProjectMCPResourcesProps) {
             <div className="mt-4 pt-3 border-t border-border">
               <div className="text-xs text-muted-foreground">
                 <p className="mb-1 font-medium">Usage examples:</p>
-                <p>• Ask: "What files do I have in this project?"</p>
-                <p>• Ask: "Show me the content of file X"</p>
-                <p>• Reference directly: "Check project://{projectId}/filename/example.txt for details"</p>
+                <p>• Ask: &ldquo;What files do I have in this project?&rdquo;</p>
+                <p>• Ask: &ldquo;Show me the content of file X&rdquo;</p>
+                <p>• Reference directly: &ldquo;Check project://{projectId}/filename/example.txt for details&rdquo;</p>
               </div>
             </div>
           </>
