@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "ui/card";
 import { Badge } from "ui/badge";
 import { Button } from "ui/button";
-import { Copy, FileIcon, CheckCircle, AlertCircle, Link2, GanttChartIcon, FileText, FolderOpen } from "lucide-react";
+import { Copy, FileIcon, CheckCircle, AlertCircle, GanttChartIcon, FolderOpen } from "lucide-react";
 import { toast } from "sonner";
 
 interface ProjectFile {
@@ -31,11 +31,12 @@ export function ProjectMCPResources({ projectId }: ProjectMCPResourcesProps) {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [files, setFiles] = useState<ProjectFile[]>([]);
   const [showFiles, setShowFiles] = useState(false);
+  
 
   // Resource URIs
-  const fileListResource = `project://${projectId}/files`;
-  const fileByIdTemplate = `project://${projectId}/file/{fileId}`;
-  const fileByNameTemplate = `project://${projectId}/filename/{fileName}`;
+  // const fileListResource = `project://${projectId}/files`;
+  // const fileByIdTemplate = `project://${projectId}/file/{fileId}`;
+  // const fileByNameTemplate = `project://${projectId}/filename/{fileName}`;
 
   // Function to copy text to clipboard
   const copyToClipboard = (text: string, label: string) => {
@@ -162,7 +163,7 @@ export function ProjectMCPResources({ projectId }: ProjectMCPResourcesProps) {
           </div>
         ) : (
           <>
-            <div className="space-y-2">
+            {/* <div className="space-y-2">
               <div className="text-sm font-medium">List all files</div>
               <div className="flex items-center gap-2">
                 <div className="flex-1 flex items-center gap-2">
@@ -187,9 +188,9 @@ export function ProjectMCPResources({ projectId }: ProjectMCPResourcesProps) {
               <div className="text-xs text-muted-foreground">
                 Lists all files in the project with metadata and access URIs.
               </div>
-            </div>
+            </div> */}
             
-            <div className="space-y-2">
+            {/* <div className="space-y-2">
               <div className="text-sm font-medium">Get file by ID</div>
               <div className="flex items-center gap-2">
                 <div className="flex-1 flex items-center gap-2">
@@ -214,9 +215,9 @@ export function ProjectMCPResources({ projectId }: ProjectMCPResourcesProps) {
               <div className="text-xs text-muted-foreground">
                 Get file content by its unique ID. Replace {"{fileId}"} with the actual file ID.
               </div>
-            </div>
+            </div> */}
             
-            <div className="space-y-2">
+            {/* <div className="space-y-2">
               <div className="text-sm font-medium">Get file by name (Recommended)</div>
               <div className="flex items-center gap-2">
                 <div className="flex-1 flex items-center gap-2">
@@ -241,7 +242,7 @@ export function ProjectMCPResources({ projectId }: ProjectMCPResourcesProps) {
               <div className="text-xs text-muted-foreground">
                 Get file content by name (more intuitive for AI). Replace {"{fileName}"} with the file name.
               </div>
-            </div>
+            </div> */}
             
             {files.length > 0 && (
               <div className="mt-4 pt-3 border-t border-border">

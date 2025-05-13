@@ -28,7 +28,7 @@ export function ProjectFileUpload({
   projectId,
   children,
   onFileUploaded,
-  maxSizeMB = 10, // Default max size is 10MB
+  maxSizeMB = 100, // Default max size is 10MB
 }: ProjectFileUploadProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [files, setFiles] = useState<ProjectFile[]>([]);

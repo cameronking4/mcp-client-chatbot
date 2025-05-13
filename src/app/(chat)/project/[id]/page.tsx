@@ -169,13 +169,19 @@ export default function ProjectPage() {
           <div className="flex-1">
             <FeatureCard
               title="Add Files"
-              onClick={() => {}}
               description="Chat in this project can access file contents."
               icon={<FileUp size={18} className="text-muted-foreground" />}
+              customComponent={
+                <div className="mt-2">
+                  <ProjectFileUpload projectId={id as string}>
+                    <Button className="w-full rounded-full bg-accent font-semibold text-muted-foreground hover:text-background">
+                      <FileUp className="size-3.5 mr-2" />
+                      Upload Files
+                    </Button>
+                  </ProjectFileUpload>
+                </div>
+              }
             />
-            <div className="mt-2 flex justify-center">
-              <ProjectFileUpload projectId={id as string} />
-            </div>
           </div>
           <FeatureCard
             title="Add Instructions"

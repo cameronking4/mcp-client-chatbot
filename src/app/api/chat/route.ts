@@ -12,7 +12,6 @@ import {
 import { customModelProvider, isToolCallUnsupportedModel } from "lib/ai/models";
 
 import { mcpClientsManager } from "lib/ai/mcp/mcp-manager";
-import { initMCPForAgent } from "lib/ai/mcp/init-for-agent";
 
 import { chatRepository } from "lib/db/repository";
 import logger from "logger";
@@ -46,10 +45,7 @@ import { generateTitleFromUserMessageAction } from "./actions";
 export const maxDuration = 600;
 
 export async function POST(request: Request) {
-  try {
-    // Explicitly initialize MCP for agent
-    await initMCPForAgent();
-    
+  try {    
     const json = await request.json();
 
     const session = await auth();
