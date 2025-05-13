@@ -110,20 +110,42 @@ export async function callMcpToolAction(
   toolName: string,
   input?: unknown,
 ) {
+  console.log(`Calling MCP tool ${toolName} on server ${mcpName}`);
+  
   const client = mcpClientsManager
     .getClients()
     .find((client) => client.getInfo().name === mcpName);
+  
   if (!client) {
-    throw new Error("Client not found");
+    console.error(`MCP client not found: ${mcpName}`);
+    throw new Error(`MCP client not found: ${mcpName}`);
   }
-  return client.callTool(toolName, input).then((res) => {
-    if (res?.isError) {
+  
+  const clientInfo = client.getInfo();
+  console.log(`MCP client status: ${clientInfo.status}`);
+  
+  try {
+    // Attempt to call the tool
+    const result = await client.callTool(toolName, input);
+    
+    if (result?.isError) {
+      console.error(`MCP tool call error for ${toolName}:`, result.content);
       throw new Error(
-        res.content?.[0]?.text ??
-          JSON.stringify(res.content, null, 2) ??
-          "Unknown error",
+        result.content?.[0]?.text ??
+          JSON.stringify(result.content, null, 2) ??
+          "Unknown error"
       );
     }
-    return res;
-  });
+    
+    return result;
+  } catch (error) {
+    console.error(`Error calling MCP tool ${toolName} on server ${mcpName}:`, error);
+    
+    // Provide detailed error information to help debugging
+    const errorMessage = error instanceof Error 
+      ? `${error.message} (${error.name})` 
+      : String(error);
+      
+    throw new Error(`Failed to call MCP tool: ${errorMessage}`);
+  }
 }

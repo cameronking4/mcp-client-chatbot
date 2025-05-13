@@ -386,8 +386,23 @@ export default function Page() {
   // Create a specific test ID for this server
   const testId = useMemo(() => `test-${name}-${nanoid(6)}`, [name]);
 
-  const { data: client, isLoading } = useSWR(`/mcp/${name}`, () =>
-    selectMcpClientAction(name as string),
+  const { data: client, isLoading, error: clientError } = useSWR(`/mcp/${name}`, 
+    async () => {
+      try {
+        return await selectMcpClientAction(name as string);
+      } catch (error) {
+        console.error(`Error loading MCP client ${name}:`, error);
+        throw error;
+      }
+    },
+    {
+      onError: (err) => {
+        console.error(`Error fetching MCP client ${name}:`, err);
+        handleErrorWithToast(err);
+      },
+      dedupingInterval: 5000, // Reduce number of duplicate requests
+      revalidateOnFocus: false
+    }
   );
 
   // Get or create the binding for this test route
@@ -483,22 +498,28 @@ export default function Page() {
       return handleErrorWithToast(parsedInput.error as Error);
 
     setIsCallLoading(true);
+    setCallResult(null);
+    
     try {
+      console.log(`Calling MCP tool ${selectedTool.name} on server ${name}`);
       const result = await callMcpToolAction(
         name as string,
         selectedTool.name,
         parsedInput.value,
       );
 
+      console.log(`MCP tool call result:`, result);
       setCallResult({
         success: true,
         data: result,
       });
     } catch (error) {
+      console.error(`MCP tool call failed:`, error);
       setCallResult({
         success: false,
         error: error instanceof Error ? error.message : "Unknown error",
       });
+      handleErrorWithToast(error instanceof Error ? error : new Error(String(error)));
     } finally {
       setIsCallLoading(false);
     }

@@ -119,42 +119,48 @@ export class MCPClient {
         const url = new URL(config.url);
         this.log.info(`Using SSE transport for ${this.name} with URL: ${url.toString()}`);
         
-        // Add more detailed logging for Vercel environment
+        // More detailed logging for environment diagnostics
         const isVercel = process.env.VERCEL === '1';
-        this.log.info(`Environment: ${process.env.NODE_ENV}, Vercel: ${isVercel ? 'Yes' : 'No'}`);
+        const isServerless = isVercel || process.env.NEXT_RUNTIME === 'edge';
+        this.log.info(`Environment: ${process.env.NODE_ENV}, Vercel: ${isVercel ? 'Yes' : 'No'}, Serverless: ${isServerless ? 'Yes' : 'No'}`);
         
         // Prepare headers with better error handling
         const headers = config.headers || {};
         this.log.info(`SSE Headers: ${JSON.stringify(headers)}`);
         
-        // Create SSE transport with improved configuration
-        transport = new SSEClientTransport(url, {
-          requestInit: {
-            headers: headers,
-            // Add timeout and credentials options for better network handling
-            credentials: 'include',
-            cache: 'no-store',
-            mode: 'cors',
-          }
-          // Retry configuration is not supported in SSEClientTransport
-          // We would need to implement custom retry logic elsewhere
-        });
-        
-        // Add connection verification
-        this.log.info(`Verifying SSE endpoint availability: ${url.toString()}`);
+        // Check if URL is accessible before creating transport
         try {
+          this.log.info(`Testing SSE endpoint availability: ${url.toString()}`);
           const testResponse = await fetch(url.toString(), {
             method: 'HEAD',
             headers: headers,
+            // Add timeout to avoid long-running requests
+            signal: AbortSignal.timeout(5000)
           });
+          
           this.log.info(`SSE endpoint status: ${testResponse.status} ${testResponse.statusText}`);
+          
           if (!testResponse.ok) {
-            this.log.warn(`SSE endpoint may not be available: ${testResponse.status}`);
+            this.log.warn(`SSE endpoint returned error status: ${testResponse.status}`);
+            // Continue anyway - we'll handle connection errors later
           }
         } catch (fetchError) {
           this.log.warn(`Could not verify SSE endpoint: ${fetchError}`);
           // Continue anyway, as the actual SSE connection might still work
         }
+        
+        // Create SSE transport with improved configuration for serverless environment
+        transport = new SSEClientTransport(url, {
+          requestInit: {
+            headers: headers,
+            credentials: 'include',
+            cache: 'no-store',
+            mode: 'cors',
+          }
+        });
+        
+        // Note: Transport interface doesn't have direct error event handling
+        // We'll rely on client.connect() error handling below
       } else {
         throw new Error("Invalid server config");
       }
@@ -259,15 +265,44 @@ export class MCPClient {
   async callTool(toolName: string, input?: unknown) {
     return safe(() => this.log.info("tool call", toolName))
       .map(async () => {
-        const client = await this.connect();
-        return client?.callTool({
-          name: toolName,
-          arguments: input as Record<string, unknown>,
-        });
+        try {
+          // Always try to connect freshly in serverless environments
+          if (process.env.VERCEL === '1' || !this.isConnected) {
+            this.log.info(`Ensuring fresh connection for tool call ${toolName} in serverless environment`);
+            this.isConnected = false; // Force reconnection
+            this.client = undefined;
+          }
+          
+          const client = await this.connect();
+          if (!client) {
+            throw new Error(`Failed to connect MCP client ${this.name} for tool call ${toolName}`);
+          }
+          
+          const result = await client.callTool({
+            name: toolName,
+            arguments: input as Record<string, unknown>,
+          });
+          
+          if (!result) {
+            throw new Error(`Tool call ${toolName} returned null or undefined result`);
+          }
+          
+          return result;
+        } catch (error) {
+          this.log.error(`Error in tool call ${toolName}:`, error);
+          
+          // Reset connection state on error
+          this.isConnected = false;
+          
+          // Rethrow with more details
+          throw error instanceof Error 
+            ? error 
+            : new Error(`Tool call ${toolName} failed: ${String(error)}`);
+        }
       })
       .ifOk((v) => {
         if (isNull(v)) {
-          throw new Error("Tool call failed with null");
+          throw new Error(`Tool call ${toolName} returned null`);
         }
         return v;
       })

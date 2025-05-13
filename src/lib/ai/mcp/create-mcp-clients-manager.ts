@@ -3,6 +3,10 @@ import { createMCPClient, type MCPClient } from "./create-mcp-client";
 import equal from "fast-deep-equal";
 import logger from "logger";
 import { createMCPToolId } from "./mcp-tool-id";
+
+// Check if running in serverless environment
+const isServerlessEnv = process.env.VERCEL === '1' || process.env.NEXT_RUNTIME === 'edge';
+
 /**
  * Interface for storage of MCP server configurations.
  * Implementations should handle persistent storage of server configs.
@@ -69,9 +73,28 @@ export class MCPClientsManager {
         await this.storage.save(name, serverConfig);
       }
     }
-    const client = createMCPClient(name, serverConfig);
+    
+    // Log environment info for debugging
+    if (isServerlessEnv) {
+      logger.info(`Adding MCP client ${name} in serverless environment (Vercel: ${process.env.VERCEL === '1'})`);
+    }
+    
+    const client = createMCPClient(name, serverConfig, 
+      isServerlessEnv 
+        ? { autoDisconnectSeconds: 30 } // Short disconnect time in serverless
+        : { autoDisconnectSeconds: 300 } // Longer in non-serverless
+    );
+    
     this.clients.set(name, client);
-    return client.connect();
+    
+    try {
+      await client.connect();
+      return client;
+    } catch (error) {
+      logger.error(`Error connecting MCP client ${name}:`, error);
+      // Still return the client so it can reconnect later
+      return client;
+    }
   }
 
   /**
