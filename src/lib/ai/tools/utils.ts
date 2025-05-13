@@ -9,4 +9,17 @@ export enum DefaultToolName {
   EnrichData = "enrichData",
   SearchData = "searchData",
   ComputeData = "computeData",
+  // Azure Storage Tools
+  AzureListFiles = "azureListFiles",
+  AzureSearchFiles = "azureSearchFiles",
+  AzureDeleteFile = "azureDeleteFile",
+  AzureUploadFile = "azureUploadFile",
+  AzureImportFile = "azureImportFile",
+  // File Creation Tool
+  CreateDownloadableFile = "createDownloadableFile",
+  // Scratchpad Memory Tools
+  MemorySet = "memorySet",
+  MemoryGet = "memoryGet",
+  MemoryDelete = "memoryDelete",
+  MemoryList = "memoryList",
 }

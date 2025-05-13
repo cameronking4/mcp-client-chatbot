@@ -37,6 +37,7 @@ import { Skeleton } from "ui/skeleton";
 import { PieChart } from "./tool-invocation/pie-chart";
 import { BarChart } from "./tool-invocation/bar-chart";
 import { LineChart } from "./tool-invocation/line-chart";
+import dynamic from "next/dynamic";
 
 type MessagePart = UIMessage["parts"][number];
 
@@ -369,11 +370,45 @@ export const ToolMessagePart = memo(
     const { toolInvocation } = part;
     const { toolName, toolCallId, state, args } = toolInvocation;
     const [isExpanded, setIsExpanded] = useState(false);
+    const [showFileDeleteConfirmation, setShowFileDeleteConfirmation] = useState(false);
+    const [showFileUpload, setShowFileUpload] = useState(false);
+    const [toolActionResult, setToolActionResult] = useState<{success: boolean; message: string} | null>(null);
 
     const isExecuting = state !== "result" && (isLast || onPoxyToolCall);
 
+    // Handle file deletion result
+    const handleDeleteComplete = (success: boolean, message: string) => {
+      setToolActionResult({ success, message });
+      setShowFileDeleteConfirmation(false);
+    };
+
+    // Handle file upload result
+    const handleUploadComplete = (success: boolean, message: string) => {
+      setToolActionResult({ success, message });
+      setShowFileUpload(false);
+    };
+
+    // Check if special UI handling is needed
+    useEffect(() => {
+      if (state === "result" && toolName === DefaultToolName.AzureDeleteFile) {
+        // Show confirmation dialog for file deletion
+        const result = (toolInvocation as any).result;
+        if (result?.pendingUserConfirmation) {
+          setShowFileDeleteConfirmation(true);
+        }
+      } else if (state === "result" && toolName === DefaultToolName.AzureUploadFile) {
+        // Show file upload dialog
+        const result = (toolInvocation as any).result;
+        if (result?.pendingUserAction && result?.action === "upload") {
+          setShowFileUpload(true);
+        }
+      }
+    }, [state, toolName, toolInvocation]);
+
     const ToolResultComponent = useMemo(() => {
       if (state === "result") {
+        const result = (toolInvocation as any).result;
+        
         switch (toolName) {
           case DefaultToolName.CreatePieChart:
             return (
@@ -408,13 +443,121 @@ export const ToolMessagePart = memo(
                 />
               </Suspense>
             );
+          case DefaultToolName.AzureImportFile:
+            if (result?.success && result?.downloadUrl) {
+              // If we have a download URL, show the FileDownload component
+              const fileDetails = {
+                fileId: result.fileName || 'file', // Use filename as ID if no fileId
+                fileName: result.fileName,
+                description: result.message || `Download ${result.fileName}`,
+                downloadUrl: result.downloadUrl,
+                fileSize: result.fileSize,
+                contentType: result.contentType || 'application/octet-stream',
+              };
+              
+              console.log(`Rendering import with download for ${fileDetails.fileName}`);
+              
+              // Use dynamic import with suspense boundary
+              const FileDownloadComponent = dynamic(
+                () => import('./tool-invocation/file-download').then(mod => mod.FileDownload),
+                { 
+                  loading: () => <Skeleton className="h-32 w-full rounded-md" />,
+                  ssr: false
+                }
+              );
+              
+              return (
+                <Suspense fallback={<Skeleton className="h-32 w-full rounded-md" />}>
+                  <FileDownloadComponent key={`download-${toolCallId}`} {...fileDetails} />
+                </Suspense>
+              );
+            }
+            break;
+          case DefaultToolName.CreateDownloadableFile:
+            if (result?.success) {
+              // For download links, show the FileDownload component
+              const fileDetails = {
+                fileId: result.fileId,
+                fileName: result.fileName,
+                description: result.description,
+                downloadUrl: result.downloadUrl,
+                fileSize: result.fileSize,
+                contentType: result.contentType,
+              };
+                
+              if (fileDetails) {
+                // Log but don't modify the download URL
+                console.log(`Rendering download component for ${fileDetails.fileName}`);
+                console.log(`Using download URL: ${fileDetails.downloadUrl}`);
+                
+                // Use dynamic import with suspense boundary
+                const FileDownloadComponent = dynamic(
+                  () => import('./tool-invocation/file-download').then(mod => mod.FileDownload),
+                  { 
+                    loading: () => <Skeleton className="h-32 w-full rounded-md" />,
+                    ssr: false
+                  }
+                );
+                
+                return (
+                  <Suspense fallback={<Skeleton className="h-32 w-full rounded-md" />}>
+                    <FileDownloadComponent key={`download-${toolCallId}`} {...fileDetails} />
+                  </Suspense>
+                );
+              }
+            }
+            break;
         }
       }
       return null;
-    }, [toolName, state]);
+    }, [toolName, state, toolInvocation, args, toolCallId]);
 
     return (
       <div key={toolCallId} className="flex flex-col gap-2 group">
+        {showFileDeleteConfirmation && (
+          // Import and use the FileDeleteConfirmation component
+          <>
+            {(() => {
+              const FileDeleteConfirmation = dynamic(() => import('./tool-invocation/file-delete-confirmation').then(mod => mod.FileDeleteConfirmation));
+              const result = (toolInvocation as any).result;
+              return (
+                <FileDeleteConfirmation
+                  projectId={result?.fileToDelete?.projectId}
+                  fileId={result?.fileToDelete?.fileId}
+                  fileName={result?.fileToDelete?.fileName}
+                  confirmationMessage={result?.confirmationMessage}
+                  onComplete={handleDeleteComplete}
+                  onClose={() => setShowFileDeleteConfirmation(false)}
+                />
+              );
+            })()}
+          </>
+        )}
+        
+        {showFileUpload && (
+          // Import and use the FileUpload component
+          <>
+            {(() => {
+              const FileUpload = dynamic(() => import('./tool-invocation/file-upload').then(mod => mod.FileUpload));
+              const result = (toolInvocation as any).result;
+              return (
+                <FileUpload
+                  projectId={result?.projectId}
+                  promptMessage={result?.promptMessage}
+                  onComplete={handleUploadComplete}
+                  onClose={() => setShowFileUpload(false)}
+                />
+              );
+            })()}
+          </>
+        )}
+        
+        {toolActionResult && (
+          <div className={`p-4 rounded-md mb-2 ${toolActionResult.success ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'}`}>
+            {toolActionResult.message}
+          </div>
+        )}
+        
         {ToolResultComponent ? (
           ToolResultComponent
         ) : (
@@ -480,8 +623,8 @@ export const ToolMessagePart = memo(
                     </div>
                     <JsonView
                       data={
-                        toolInvocation.state === "result"
-                          ? toolInvocation.result
+                        state === "result"
+                          ? (toolInvocation as any).result
                           : null
                       }
                     />

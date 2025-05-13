@@ -1,12 +1,17 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { File, Image, FileText, FileArchive } from "lucide-react";
+import { File, Image, FileText, FileArchive, Download } from "lucide-react";
+import { Button } from "ui/button";
+import { formatBytes } from "lib/utils";
 
 import type { Attachment } from "ai";
 
 interface FileAttachmentProps {
-  attachment: Attachment;
+  attachment: Attachment & {
+    downloadUrl?: string;
+    fileSize?: number;
+  };
 }
 
 export function FileAttachment({ attachment }: FileAttachmentProps) {
@@ -55,15 +60,37 @@ export function FileAttachment({ attachment }: FileAttachmentProps) {
           <File className="h-4 w-4 text-muted-foreground" />
           <span className="text-sm font-medium truncate">{attachment.name || "File"}</span>
         </div>
-        <div className="text-xs text-muted-foreground mt-1 truncate">
-          {attachment.contentType || "Unknown type"}
+        <div className="flex items-center justify-between">
+          <div className="text-xs text-muted-foreground mt-1 truncate">
+            {attachment.contentType || "Unknown type"}
+            {attachment.fileSize !== undefined && (
+              <span className="ml-1">({formatBytes(attachment.fileSize)})</span>
+            )}
+          </div>
+          {attachment.downloadUrl && (
+            <a 
+              href={attachment.downloadUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-1"
+            >
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="h-6 w-6"
+                title="Download file"
+              >
+                <Download className="h-3.5 w-3.5" />
+              </Button>
+            </a>
+          )}
         </div>
       </div>
     </div>
   );
 }
 
-export function FileAttachmentList({ attachments }: { attachments: Attachment[] }) {
+export function FileAttachmentList({ attachments }: { attachments: (Attachment & { downloadUrl?: string; fileSize?: number })[] }) {
   if (!attachments || attachments.length === 0) return null;
   
   return (

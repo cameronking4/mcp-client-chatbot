@@ -7,6 +7,9 @@
  *    - scratchpad://namespaces - Lists all available namespaces
  *    - scratchpad://{namespace}/keys - Lists all keys in a specific namespace
  *    - scratchpad://{namespace}/{key} - Gets the value of a specific key in a namespace
+ *    - project-files:// - Lists all available projects
+ *    - project-files://{projectId} - Lists all files in a specific project
+ *    - project-files://{projectId}/{fileId} - Gets the content of a specific file
  * 
  * 2. MCP Tools:
  *    - get_weather - Gets weather information for a location
@@ -27,6 +30,7 @@ import { registerScratchpadTools } from "./tools/scratchpad-tools.js";
 import { registerBasicDataTools } from "./tools/data-tools-basic.js";
 import { registerAdvancedDataTools } from "./tools/data-tools-advanced.js";
 import { registerScratchpadResources } from "./resources/scratchpad-resources.js";
+import { registerProjectFilesResources } from "./resources/project-files-resources.js";
 
 // Create the MCP server
 const server = new McpServer({
@@ -36,6 +40,7 @@ const server = new McpServer({
 
 // Register all resources and tools
 registerScratchpadResources(server);
+registerProjectFilesResources(server);
 registerWeatherTools(server);
 registerScratchpadTools(server);
 registerBasicDataTools(server);
