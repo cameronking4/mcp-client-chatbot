@@ -156,7 +156,7 @@ export async function POST(request: Request) {
         }
 
         const systemPrompt = mergeSystemPrompt(
-          thread?.instructions?.systemPrompt || defaultSystemPrompt,
+          thread?.instructions?.systemPrompt + (projectId ? `Project files here: "blob://project-files/${projectId}". You can also find project files here: "project-files://${projectId}"` : "") + defaultSystemPrompt,
           SYSTEM_TIME_PROMPT(session),
         );
 

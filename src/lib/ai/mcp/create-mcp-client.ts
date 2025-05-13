@@ -8,6 +8,7 @@ import {
   MCPStdioConfigZodSchema,
   type MCPServerConfig,
   type MCPToolInfo,
+  type MCPResourceInfo,
 } from "app-types/mcp";
 import { jsonSchema, Tool, tool, ToolExecutionOptions } from "ai";
 import { isMaybeSseConfig, isMaybeStdioConfig } from "./is-mcp-config";
@@ -33,6 +34,8 @@ export class MCPClient {
   private locker = new Locker();
   // Information about available tools from the server
   toolInfo: MCPToolInfo[] = [];
+  // Information about available resources from the server
+  resourceInfo: MCPResourceInfo[] = [];
   // Tool instances that can be used for AI functions
   tools: { [key: string]: Tool } = {};
 
@@ -58,6 +61,7 @@ export class MCPClient {
           : "disconnected",
       error: this.error,
       toolInfo: this.toolInfo,
+      resourceInfo: this.resourceInfo,
     };
   }
 
@@ -148,6 +152,24 @@ export class MCPClient {
         this.log.info(`Listing tools for ${this.name}...`);
         const toolResponse = await client.listTools();
         this.log.info(`Received ${toolResponse.tools.length} tools from ${this.name}`);
+        
+        // List resources
+        this.log.info(`Listing resources for ${this.name}...`);
+        try {
+          const resourceResponse = await client.listResources();
+          this.log.info(`Received ${resourceResponse.resources.length} resources from ${this.name}`);
+          
+          // Store resource information
+          this.resourceInfo = resourceResponse.resources.map(
+            (resource) => ({
+              uri: resource.uri,
+              name: resource.name || resource.uri,
+            }) as MCPResourceInfo
+          );
+        } catch (resourceError) {
+          this.log.error(`Failed to list resources for ${this.name}:`, resourceError);
+          // Don't throw here, just log the error - we can continue without resources
+        }
         
         this.toolInfo = toolResponse.tools.map(
           (tool) =>

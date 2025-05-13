@@ -8,6 +8,8 @@ import {
   Settings,
   Trash,
   Wrench,
+  Link as LinkIcon,
+  Copy,
 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "ui/alert";
 import { Button } from "ui/button";
@@ -19,7 +21,6 @@ import { memo, useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 import { mutate } from "swr";
 import { safe } from "ts-safe";
-
 import { handleErrorWithToast } from "ui/shared-toast";
 import {
   connectMcpClientAction,
@@ -27,10 +28,18 @@ import {
   refreshMcpClientAction,
   removeMcpClientAction,
 } from "@/app/api/mcp/actions";
-import type { MCPServerInfo, MCPToolInfo } from "app-types/mcp";
+import type { MCPServerInfo, MCPToolInfo, MCPResourceInfo } from "app-types/mcp";
 import { Switch } from "ui/switch";
 import { Label } from "ui/label";
 import { ToolDetailPopup } from "./tool-detail-popup";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "ui/dialog";
+import { toast } from "sonner";
 
 // Tools list component
 const ToolsList = memo(({ tools }: { tools: MCPToolInfo[] }) => (
@@ -67,6 +76,74 @@ const ErrorAlert = memo(({ error }: { error: string }) => (
 
 ErrorAlert.displayName = "ErrorAlert";
 
+// Resource detail popup component
+const ResourceDetailPopup = memo(
+  ({ children, resource }: { children: React.ReactNode; resource: MCPResourceInfo }) => {
+    const [isOpen, setIsOpen] = useState(false);
+
+    return (
+      <>
+        <div onClick={() => setIsOpen(true)}>{children}</div>
+        <Dialog open={isOpen} onOpenChange={setIsOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="text-base">Resource: {resource.name}</DialogTitle>
+              <DialogDescription className="text-xs">
+                Resource URI details
+              </DialogDescription>
+            </DialogHeader>
+            <div className="mt-2 space-y-4">
+              <div>
+                <h3 className="font-medium text-sm mb-1">URI</h3>
+                <div className="bg-muted p-2 rounded-md text-sm font-mono overflow-auto">
+                  {resource.uri}
+                </div>
+              </div>
+              <div className="flex items-center justify-between">
+                <Button 
+                  size="sm" 
+                  variant="outline"
+                  onClick={() => {
+                    navigator.clipboard.writeText(resource.uri);
+                    toast.success("Resource URI copied to clipboard");
+                  }}
+                >
+                  <Copy className="h-3 w-3 mr-1" /> Copy URI
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      </>
+    );
+  }
+);
+
+ResourceDetailPopup.displayName = "ResourceDetailPopup";
+
+// Resources list component
+const ResourcesList = memo(({ resources }: { resources: MCPResourceInfo[] }) => (
+  <div className="space-y-2 pr-2">
+    {resources.map((resource) => (
+      <ResourceDetailPopup key={resource.uri} resource={resource}>
+        <div className="flex cursor-pointer bg-secondary rounded-md p-2 hover:bg-input transition-colors">
+          <div className="flex-1 w-full">
+            <p className="font-medium text-sm mb-1">{resource.name}</p>
+            <p className="text-xs text-muted-foreground line-clamp-1">
+              {resource.uri}
+            </p>
+          </div>
+          <div className="flex items-center px-1 justify-center self-stretch">
+            <ChevronRight size={16} />
+          </div>
+        </div>
+      </ResourceDetailPopup>
+    ))}
+  </div>
+));
+
+ResourcesList.displayName = "ResourcesList";
+
 // Main MCPCard component
 export const MCPCard = memo(function MCPCard({
   config,
@@ -74,6 +151,7 @@ export const MCPCard = memo(function MCPCard({
   status,
   name,
   toolInfo,
+  resourceInfo,
 }: MCPServerInfo) {
   const [isProcessing, setIsProcessing] = useState(false);
 
@@ -211,7 +289,7 @@ export const MCPCard = memo(function MCPCard({
             <div className="flex items-center gap-2 mb-4 pt-2 pb-1 z-10">
               <Wrench size={14} className="text-muted-foreground" />
               <h5 className="text-muted-foreground text-sm font-medium">
-                Available Tools
+                Available Tools ({toolInfo.length})
               </h5>
             </div>
 
@@ -221,6 +299,24 @@ export const MCPCard = memo(function MCPCard({
               <div className="bg-secondary/30 rounded-md p-3 text-center">
                 <p className="text-sm text-muted-foreground">
                   No tools available
+                </p>
+              </div>
+            )}
+            
+            {/* Resources section */}
+            <div className="flex items-center gap-2 mt-6 mb-2 pt-2 pb-1 z-10">
+              <LinkIcon size={14} className="text-muted-foreground" />
+              <h5 className="text-muted-foreground text-sm font-medium">
+                Available Resources ({resourceInfo?.length || 0})
+              </h5>
+            </div>
+            
+            {resourceInfo && resourceInfo.length > 0 ? (
+              <ResourcesList resources={resourceInfo} />
+            ) : (
+              <div className="bg-secondary/30 rounded-md p-3 text-center">
+                <p className="text-sm text-muted-foreground">
+                  No resources available
                 </p>
               </div>
             )}

@@ -26,12 +26,18 @@ export type MCPToolInfo = {
   };
 };
 
+export type MCPResourceInfo = {
+  uri: string;
+  name: string;
+};
+
 export type MCPServerInfo = {
   name: string;
   config: MCPServerConfig;
   error?: unknown;
   status: "connected" | "disconnected" | "loading";
   toolInfo: MCPToolInfo[];
+  resourceInfo: MCPResourceInfo[];
 };
 
 export enum MCPServerBindingOwnerType {

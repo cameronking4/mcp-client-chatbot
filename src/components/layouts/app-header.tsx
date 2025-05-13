@@ -11,6 +11,7 @@ import { Toggle } from "ui/toggle";
 import {
   ChevronDown,
   ChevronRight,
+  Database,
   MoonStar,
   PanelLeft,
   Sun,
@@ -115,11 +116,23 @@ export function AppHeader() {
       </TooltipProvider>
       {componentByPage}
       <div className="flex-1" />
-
-      <TemporaryChat />
-
+      <TooltipProvider>
+        <Tooltip>
+            <Link href="/storage">
+              <TooltipTrigger asChild>
+                <Button variant="ghost">
+                  <Database />
+                  Storage Browser
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="right">
+                <p>Azure Storage Browser</p>
+              </TooltipContent>
+            </Link>
+        </Tooltip>
+      </TooltipProvider>
       <Link
-        href="https://github.com/cgoinglove/mcp-client-chatbot"
+        href="https://github.com/cameronking4/mcp-workbench/tree/chat-rendering"
         target="_blank"
       >
         <Button variant="ghost" size="icon">

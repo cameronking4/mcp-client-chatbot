@@ -23,6 +23,7 @@ import { Separator } from "ui/separator";
 import { useLatest } from "@/hooks/use-latest";
 import { UIMessage } from "ai";
 import { useShallow } from "zustand/shallow";
+import { MessageCirclePlus } from "lucide-react";
 
 export default function TemporaryChat({ children }: PropsWithChildren) {
   const [open, setOpen] = useState(false);
@@ -86,10 +87,11 @@ export default function TemporaryChat({ children }: PropsWithChildren) {
                 onClick={() => {
                   setOpen(!open);
                 }}
-                size={"sm"}
-                variant={open ? "secondary" : "ghost"}
+               className="w-full justify-between border border-ring/80 font-semibold border-dashed hover:bg-primary/80 hover:text-primary-foreground" 
+               variant={open ? "secondary" : "ghost"}
               >
-                temporary
+                Temporary Chat
+                <MessageCirclePlus />
               </Button>
             </TooltipTrigger>
             <TooltipContent align="end" side="bottom">

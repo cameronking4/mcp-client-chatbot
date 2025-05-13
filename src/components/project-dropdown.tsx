@@ -5,7 +5,7 @@ import {
 } from "@/app/api/chat/actions";
 import { appStore } from "@/app/store";
 import { Project } from "app-types/chat";
-import { Loader, PencilLine, Trash } from "lucide-react";
+import { Loader, PencilLine, Trash, Database } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { type PropsWithChildren, useState } from "react";
 import { toast } from "sonner";
@@ -32,7 +32,7 @@ import {
 
 import { Input } from "ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "ui/popover";
-
+import Link from "next/link";
 type Props = PropsWithChildren<{
   project: Pick<Project, "id" | "name">;
   side?: "top" | "bottom" | "left" | "right";
@@ -82,6 +82,14 @@ export function ProjectDropdown({ project, children, side, align }: Props) {
           <CommandSeparator />
           <CommandList>
             <CommandGroup>
+            <CommandItem className="cursor-pointer p-0">
+                <Link href="/storage">
+                  <div className="flex items-center gap-2 w-full px-2 py-1 rounded">
+                    <Database className="text-foreground" />
+                    Storage Browser
+                  </div>
+                  </Link>
+              </CommandItem>
               <CommandItem className="cursor-pointer p-0">
                 <UpdateProjectNameDialog
                   initialName={project.name}

@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, CornerRightUp, Paperclip, Pause, X } from "lucide-react";
+import { ChevronDown, CornerRightUp, Paperclip, Pause, Settings2, X } from "lucide-react";
 import { ReactNode, useMemo, useState, useRef, useEffect } from "react";
 import { Button } from "ui/button";
 import { PastesContentCard } from "./pasts-content";
@@ -13,6 +13,7 @@ import { createMCPToolId } from "lib/ai/mcp/mcp-tool-id";
 import { ChatMessageAnnotation } from "app-types/chat";
 import dynamic from "next/dynamic";
 import { ToolChoiceDropDown } from "./tool-choice-dropdown";
+import { SystemMessagePopup } from "./system-message-popup";
 
 import { MCPServerBindingSelector } from "./mcp-server-binding";
 import { MCPServerBinding } from "app-types/mcp";
@@ -75,6 +76,8 @@ export default function PromptInput({
   const [appStoreMutate, model, mcpList] = appStore(
     useShallow((state) => [state.mutate, state.model, state.mcpList]),
   );
+
+  const [systemPromptOpen, setSystemPromptOpen] = useState(false);
 
   const [toolMentionItems, setToolMentionItems] = useState<
     { id: string; label: ReactNode; [key: string]: any }[]
@@ -373,6 +376,16 @@ export default function PromptInput({
                 >
                   <Paperclip className={`size-4 ${files && files.length > 0 ? "text-primary" : ""}`} />
                 </div>
+                <div
+                  className="cursor-pointer text-muted-foreground border rounded-full p-2 bg-transparent hover:bg-muted transition-all duration-200"
+                  onClick={() => setSystemPromptOpen(true)}
+                >
+                  <Settings2 className={`size-4 ${files && files.length > 0 ? "text-primary" : ""}`} />
+                </div>
+                <SystemMessagePopup 
+                  isOpen={systemPromptOpen} 
+                  onOpenChange={setSystemPromptOpen} 
+                />
 
                 {!toolDisabled && (
                   <>

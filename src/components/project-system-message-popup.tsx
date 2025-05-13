@@ -64,8 +64,7 @@ export function ProjectSystemMessagePopup({
               <p className="font-semibold mb-2">
                 How can the ChatBot best help you with this project?
               </p>
-              You can ask the ChatBot to focus on a specific topic or to respond
-              in a particular tone or format.
+              These instructions will only be used for this project.
             </div>
           </DialogDescription>
         </DialogHeader>

@@ -9,7 +9,7 @@
  * - blob://{container}/{blobPath} - Gets the content of a specific blob
  */
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { BlobServiceClient, ContainerItem, BlobItem } from '@azure/storage-blob';
+import { BlobServiceClient } from '@azure/storage-blob';
 
 // Get Azure Storage connection string from environment
 const connectionString = process.env.AZURE_STORAGE_CONNECTION_STRING;
@@ -181,12 +181,23 @@ export function registerBlobResources(server: McpServer) {
         const containerName = params.container as string;
         let blobPath = params.blobPath as string;
         
+        console.log(`[MCP] Blob resource requested: container=${containerName}, path=${blobPath}, uri=${uri.href}`);
+        
         // Fix potential URL encoding issues
         blobPath = decodeURIComponent(blobPath);
         
         const containerClient = blobServiceClient.getContainerClient(containerName);
         const blobClient = containerClient.getBlobClient(blobPath);
         
+        console.log(`[MCP] Checking if blob exists: ${blobClient.url}`);
+        const exists = await blobClient.exists();
+        
+        if (!exists) {
+          console.error(`[MCP] Blob not found: ${blobPath} in container ${containerName}`);
+          throw new Error(`Resource not found: ${uri.href}`);
+        }
+        
+        console.log(`[MCP] Blob found, getting properties and downloading content`);
         const properties = await blobClient.getProperties();
         const downloadResponse = await blobClient.download(0);
         
@@ -203,6 +214,8 @@ export function registerBlobResources(server: McpServer) {
         
         const contentType = properties.contentType || getMimeType(undefined, blobPath);
         const isTextFile = isTextContentType(contentType, blobPath);
+        
+        console.log(`[MCP] Successfully retrieved blob: ${blobPath}, size=${content.length}, type=${contentType}, isText=${isTextFile}`);
         
         if (isTextFile) {
           // Return as text for text-based files
@@ -224,8 +237,20 @@ export function registerBlobResources(server: McpServer) {
           };
         }
       } catch (error: any) {
-        console.error(`Error retrieving blob ${params.blobPath} from container ${params.container}:`, error);
-        throw new Error(`Failed to retrieve blob: ${params.blobPath}`);
+        console.error(`[MCP] Error retrieving blob ${params.blobPath} from container ${params.container}:`, error);
+        
+        // Return a proper error response instead of throwing
+        return {
+          contents: [{
+            uri: uri.href,
+            mimeType: "application/json",
+            text: JSON.stringify({
+              error: true,
+              message: `Failed to retrieve blob: ${error.message}`,
+              code: error.code || 'UNKNOWN_ERROR'
+            }, null, 2)
+          }]
+        };
       }
     }
   );

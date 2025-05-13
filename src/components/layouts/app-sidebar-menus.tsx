@@ -7,12 +7,10 @@ import { cn } from "lib/utils";
 import { SidebarGroup } from "ui/sidebar";
 import { TooltipProvider } from "ui/tooltip";
 import Link from "next/link";
-import { Library, MessageCirclePlus, Server, Settings2 } from "lucide-react";
-import { useState } from "react";
-import { SystemMessagePopup } from "../system-message-popup";
+import { Library, MessageCirclePlus, Server } from "lucide-react";
+import TemporaryChat from "../temporary-chat";
 
 export function AppSidebarMenus({ isOpen }: { isOpen: boolean }) {
-  const [systemPromptOpen, setSystemPromptOpen] = useState(false);
 
   return (
     <SidebarGroup className={cn(isOpen && "px-4")}>
@@ -26,7 +24,7 @@ export function AppSidebarMenus({ isOpen }: { isOpen: boolean }) {
                     <SidebarMenuButton
                       className={cn(
                         isOpen && "flex justify-between w-full",
-                        "border border-ring/80 font-semibold border-dashed hover:bg-primary/80 hover:text-primary-foreground",
+                        "border border-ring/80 font-semibold hover:bg-primary/80 hover:text-primary-foreground",
                         "p-4"
                       )}
                     >
@@ -41,6 +39,9 @@ export function AppSidebarMenus({ isOpen }: { isOpen: boolean }) {
               </SidebarMenuItem>
             </Tooltip>
           </TooltipProvider>
+        </SidebarMenu>
+        <SidebarMenu className="my-3">
+          <TemporaryChat />
         </SidebarMenu>
         <SidebarMenu>
           <TooltipProvider>
@@ -68,35 +69,7 @@ export function AppSidebarMenus({ isOpen }: { isOpen: boolean }) {
             </Tooltip>
           </TooltipProvider>
         </SidebarMenu>
-        <SidebarMenu className="mt-3">
-          <TooltipProvider>
-            <Tooltip>
-              <SidebarMenuItem>
-                  <TooltipTrigger asChild>
-                    <SidebarMenuButton
-                      className={cn(
-                        isOpen && "flex justify-between w-full",
-                        "border font-semibold hover:bg-primary/80 hover:text-primary-foreground",
-                        "p-4"
-                      )}
-                      onClick={() => setSystemPromptOpen(true)}
-                    >
-                      System Prompt
-                      <Settings2 />
-                    </SidebarMenuButton>
-                  </TooltipTrigger>
-                  <TooltipContent side="right">
-                    <p>View / Update System Prompt</p>
-                  </TooltipContent>
-              </SidebarMenuItem>
-            </Tooltip>
-          </TooltipProvider>
-        </SidebarMenu>
       </SidebarGroupContent>
-      <SystemMessagePopup 
-        isOpen={systemPromptOpen} 
-        onOpenChange={setSystemPromptOpen} 
-      />
     </SidebarGroup>
   );
 }

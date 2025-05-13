@@ -1,16 +1,15 @@
 import React, { useState } from "react";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 import { AzureStorageClient } from "lib/azure-storage";
-import { Loader } from "lucide-react";
+import { Loader, Trash2 } from "lucide-react";
 
 export interface FileDeleteConfirmationProps {
   projectId: string;
@@ -59,23 +58,23 @@ export function FileDeleteConfirmation({
   };
 
   return (
-    <AlertDialog open={true} onOpenChange={onClose}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>Confirm Deletion</AlertDialogTitle>
-          <AlertDialogDescription>
+    <Dialog open={true} onOpenChange={onClose}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Confirm Deletion</DialogTitle>
+          <DialogDescription>
             {confirmationMessage || `Are you sure you want to delete "${fileName}"? This action cannot be undone.`}
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
-          <AlertDialogAction 
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="outline" disabled={isDeleting} onClick={onClose}>Cancel</Button>
+          <Button 
             onClick={(e) => {
               e.preventDefault();
               handleDelete();
             }}
             disabled={isDeleting}
-            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            variant="destructive"
           >
             {isDeleting ? (
               <>
@@ -83,11 +82,11 @@ export function FileDeleteConfirmation({
                 Deleting...
               </>
             ) : (
-              "Delete"
+              <Trash2 className="mr-2 h-4 w-4" />
             )}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 } 
