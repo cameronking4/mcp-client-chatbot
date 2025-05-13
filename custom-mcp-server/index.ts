@@ -26,6 +26,10 @@ import { z } from "zod";
 import { memoryStore } from "./scratchpad-db-implementation.js";
 import { dataAnalyzer } from "./data-analysis-implementation.js";
 import { projectFilesManager } from "./project-files-implementation.js";
+import { db } from "../src/lib/db";
+import * as schema from "../src/lib/db/pg/schema.pg";
+import { eq } from "drizzle-orm";
+import { azureStorage } from "../src/lib/azure-storage";
 
 const server = new McpServer({
   name: "custom-mcp-server",
@@ -979,730 +983,113 @@ server.tool(
   }
 );
 
-// Project file resources
-// Enhanced implementation for improved LLM accessibility
+// Project file resources - Simplified implementation
+// These resources expose files stored in Azure Blob Storage organized by projectId
 
-// List all files in a project
-server.resource(
-  "project-files",
-  new ResourceTemplate("project://{projectId}/files", { list: undefined }),
-  async (uri, params) => {
-    try {
-      const projectId = params.projectId as string;
-      
-      if (!projectId) {
-        return {
-          contents: [{
-            uri: uri.href,
-            mimeType: "application/json",
-            text: JSON.stringify({ 
-              error: "Project ID is required",
-              success: false
-            }, null, 2),
-          }]
-        };
-      }
-      
-      const files = await projectFilesManager.listProjectFiles(projectId);
-      
-      // Format file information in a more structured way for easier LLM processing
-      const formattedFiles = files.map(file => {
-        // Generate the direct download URL for each file
-        const downloadUrl = `${process.env.AZURE_STORAGE_ACCOUNT_URL || ''}/project-files/${projectId}/${file.id}`;
-        
-        return {
-          id: file.id,
-          name: file.name,
-          contentType: file.contentType || 'application/octet-stream',
-          size: file.size,
-          sizeFormatted: formatFileSize(file.size),
-          createdAt: file.createdAt,
-          updatedAt: file.updatedAt,
-          // Add both MCP resource URI and direct download URL
-          resourceUri: `project://${projectId}/file/${file.id}`,
-          nameBasedUri: `project://${projectId}/filename/${encodeURIComponent(file.name)}`,
-          downloadUrl: downloadUrl,
-          // Classify file type for easier handling
-          isTextFile: file.contentType?.startsWith('text/') || 
-                      ['application/json', 'application/javascript', 'application/typescript'].includes(file.contentType || ''),
-          isImage: file.contentType?.startsWith('image/'),
-          isPdf: file.contentType === 'application/pdf'
-        };
-      });
-      
-      // Create a clear explanation of usage patterns
-      const helpText = `
-# Project Files Access Guide
-
-## IMPORTANT: DO NOT USE TOOLS FOR FILE ACCESS
-Always access files directly using the URI patterns below. Do not use custom_project_file_analyze or other tools.
-
-## Access Files By Name (RECOMMENDED):
-Access files by name using:
-project://${projectId}/filename/{fileName}
-
-Example:
-project://${projectId}/filename/${formattedFiles.length > 0 ? encodeURIComponent(formattedFiles[0].name) : "example.txt"}
-
-## Access Files By ID:
-project://${projectId}/file/{fileId}
-
-## File Types and How to Use Them:
-
-### Text Files:
-Text files will display their content directly when accessed.
-
-### Images:
-For images, you'll receive a direct URL that can be used in markdown:
-![Image Description](https://example.com/image.png)
-
-### PDFs and Binary Files:
-For PDFs and other binary files, you'll receive a download link that should be provided to the user:
-[Download File](https://example.com/file.pdf)
-
-## Available Files:
-${formattedFiles.map((file, i) => `
-${i+1}. ${file.name} (${file.contentType || 'unknown'}, ${file.sizeFormatted})
-   Type: ${file.isTextFile ? 'Text' : file.isImage ? 'Image' : file.isPdf ? 'PDF' : 'Binary'}
-   Access URI: ${file.nameBasedUri}
-   ${!file.isTextFile ? `Direct URL: ${file.downloadUrl}` : ''}
-`).join('')}
-`;
-      
-      return {
-        contents: [{
-          uri: uri.href,
-          mimeType: "text/plain", // Change to text/plain for clearer presentation
-          text: helpText + "\n\n" + JSON.stringify({
-            success: true,
-            projectId,
-            fileCount: files.length,
-            files: formattedFiles
-          }, null, 2),
-        }]
-      };
-    } catch (error) {
-      console.error("Error listing project files:", error);
-      return {
-        contents: [{
-          uri: uri.href,
-          mimeType: "application/json",
-          text: JSON.stringify({ 
-            error: "Failed to list project files",
-            success: false
-          }, null, 2),
-        }]
-      };
-    }
-  }
-);
-
-// Get content of a specific file
-server.resource(
-  "project-file-content",
-  new ResourceTemplate("project://{projectId}/file/{fileId}", { list: undefined }),
-  async (uri, params) => {
-    try {
-      const projectId = params.projectId as string;
-      const fileId = params.fileId as string;
-      
-      if (!projectId || !fileId) {
-        return {
-          contents: [{
-            uri: uri.href,
-            mimeType: "application/json",
-            text: JSON.stringify({ 
-              error: "Project ID and File ID are required",
-              success: false
-            }, null, 2),
-          }]
-        };
-      }
-      
-      const { content, file } = await projectFilesManager.getFileContent(projectId, fileId);
-      
-      if (!content || !file) {
-        return {
-          contents: [{
-            uri: uri.href,
-            mimeType: "application/json",
-            text: JSON.stringify({ 
-              error: "File not found",
-              success: false,
-              projectId,
-              fileId,
-              suggestion: "Try listing all files with project://" + projectId + "/files"
-            }, null, 2),
-          }]
-        };
-      }
-      
-      // Determine if this is a text file for better handling
-      const isTextFile = file.contentType?.startsWith('text/') || 
-                         ['application/json', 'application/javascript', 'application/typescript'].includes(file.contentType || '');
-      
-      // Create a publicly accessible download URL for binary files
-      // Using the Node.js API route format
-      const downloadUrl = `${process.env.BASE_URL || ''}/api/project-files/${projectId}/${file.id}/download`;
-      
-      // Prepare file metadata
-      const metadata = {
-        id: file.id,
-        name: file.name,
-        contentType: file.contentType,
-        size: file.size,
-        sizeFormatted: formatFileSize(file.size),
-        createdAt: file.createdAt,
-        updatedAt: file.updatedAt,
-        isTextFile,
-        downloadUrl, // Add the direct download URL
-        uri: uri.href,
-        nameBasedUri: `project://${projectId}/filename/${encodeURIComponent(file.name)}` // Add name-based URI for convenience
-      };
-      
-      // Special handling for PDF files
-      if (file.contentType === 'application/pdf') {
-        // For PDFs, provide clear download instructions and don't return blob data
-        return {
-          contents: [{
-            uri: uri.href,
-            mimeType: "text/plain",
-            text: `
-PDF FILE: ${file.name} (${formatFileSize(file.size)})
-
-This is a PDF file and cannot be displayed as text content directly.
-
-DIRECT DOWNLOAD LINK:
-${downloadUrl}
-
-You can view this PDF by:
-
-1. Visit the above URL directly in a browser
-2. Use a Markdown image: ![${file.name}](${downloadUrl})
-3. Create a download link: [Download ${file.name}](${downloadUrl})
-
-PDF METADATA:
-ID: ${file.id}
-Name: ${file.name}
-Size: ${formatFileSize(file.size)}
-Last Updated: ${formatDate(file.updatedAt)}
-
-DO NOT USE PROJECT FILE ANALYZE TOOLS. Use the download URL above.
-`,
-            metadata: JSON.stringify({
-              ...metadata,
-              isPdf: true,
-              accessMethod: "Use the download URL directly. Do not use custom tools."
-            })
-          }]
-        };
-      }
-      
-      // For binary image files, provide embedded markdown image tag
-      if (file.contentType?.startsWith('image/')) {
-        return {
-          contents: [{
-            uri: uri.href,
-            mimeType: "text/plain",
-            text: `
-IMAGE FILE: ${file.name} (${formatFileSize(file.size)})
-
-This is an image file that can be viewed using the direct URL below.
-
-DIRECT IMAGE URL:
-${downloadUrl}
-
-You can display this image directly with Markdown:
-
-![${file.name}](${downloadUrl})
-
-IMAGE METADATA:
-ID: ${file.id}
-Name: ${file.name}
-Type: ${file.contentType}
-Size: ${formatFileSize(file.size)}
-Last Updated: ${formatDate(file.updatedAt)}
-
-DO NOT USE PROJECT FILE ANALYZE TOOLS. Use the image URL above.
-`,
-            metadata: JSON.stringify({
-              ...metadata,
-              isImage: true,
-              accessMethod: "Use the image URL directly in markdown. Do not use custom tools."
-            })
-          }]
-        };
-      }
-      
-      // For other binary files, return with instructions but no blob data
-      if (!isTextFile) {
-        return {
-          contents: [{
-            uri: uri.href,
-            mimeType: "text/plain",
-            text: `
-BINARY FILE: ${file.name} (${formatFileSize(file.size)})
-
-This is a binary file (${file.contentType}) and cannot be displayed as text directly.
-
-DIRECT DOWNLOAD LINK:
-${downloadUrl}
-
-You can access this file by:
-1. Opening the URL directly in a browser
-2. Creating a download link: [Download ${file.name}](${downloadUrl})
-
-FILE METADATA:
-ID: ${file.id}
-Name: ${file.name}
-Type: ${file.contentType}
-Size: ${formatFileSize(file.size)}
-Last Updated: ${formatDate(file.updatedAt)}
-
-DO NOT USE PROJECT FILE ANALYZE TOOLS. Use the download link above.
-`,
-            metadata: JSON.stringify({
-              ...metadata,
-              isBinary: true,
-              accessMethod: "Use the download URL directly. Do not use custom tools."
-            })
-          }]
-        };
-      }
-      
-      // For text files, return normal content
-      return {
-        contents: [{
-          uri: uri.href,
-          mimeType: file.contentType || "text/plain",
-          text: content.toString('utf-8'),
-          metadata: JSON.stringify({
-            ...metadata,
-            isText: true,
-            accessMethod: "This text content is already shown. No tools needed."
-          })
-        }]
-      };
-    } catch (error) {
-      console.error("Error getting file content:", error);
-      return {
-        contents: [{
-          uri: uri.href,
-          mimeType: "application/json",
-          text: JSON.stringify({ 
-            error: "Failed to get file content",
-            success: false
-          }, null, 2),
-        }]
-      };
-    }
-  }
-);
-
-// Add tool for subscribing to file changes
-server.tool(
-  "project_files_subscribe",
-  "Subscribe to file changes in a project to get notifications when files are added, updated, or deleted.",
+// Resource definitions for project files
+const projectResourceDefinitions = [
   {
-    projectId: z.string().describe("The ID of the project to subscribe to"),
-    action: z.enum(["subscribe", "unsubscribe"]).describe("Whether to subscribe or unsubscribe"),
-    subscriberId: z.string().optional().describe("Optional identifier for the subscriber (defaults to a generated ID)")
-  },
-  async ({ projectId, action, subscriberId }) => {
-    try {
-      // Generate a subscriber ID if not provided
-      const subId = subscriberId || `sub-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
-      
-      if (action === "subscribe") {
-        const success = projectFilesManager.subscribeToProject(projectId, subId);
+    id: "project-files-list",
+    template: new ResourceTemplate("project://{projectId}/files", { list: undefined }),
+    description: "Lists all files in a project",
+    handler: async (uri, params) => {
+      try {
+        const projectId = params.projectId as string;
         
-        if (success) {
+        if (!projectId) {
           return {
-            content: [
-              {
-                type: "text",
-                text: `Successfully subscribed to file changes for project ${projectId} with subscriber ID: ${subId}`,
-              },
-              {
-                type: "text",
-                text: `You'll be notified when files are added, updated, or deleted. Your subscription ID is: ${subId}`,
-              },
-              {
-                type: "text",
-                text: `To access files, use: project://${projectId}/files for listing or project://${projectId}/file/{fileId} for content`,
-              }
-            ],
-          };
-        } else {
-          return {
-            content: [
-              {
-                type: "text",
-                text: `Failed to subscribe to project ${projectId}. Please try again.`,
-              }
-            ],
-          };
-        }
-      } else {
-        // Unsubscribe action
-        const success = projectFilesManager.unsubscribeFromProject(projectId, subId);
-        
-        if (success) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: `Successfully unsubscribed from file changes for project ${projectId} with subscriber ID: ${subId}`,
-              }
-            ],
-          };
-        } else {
-          return {
-            content: [
-              {
-                type: "text",
-                text: `Failed to unsubscribe from project ${projectId}. The subscription may not exist.`,
-              }
-            ],
-          };
-        }
-      }
-    } catch (error: any) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Error managing subscription: ${error.message}`,
-          }
-        ],
-      };
-    }
-  }
-);
-
-// Add tool for file information and text extraction
-server.tool(
-  "project_file_analyze",
-  "Get information about a file and extract text content if possible.",
-  {
-    projectId: z.string().describe("The ID of the project"),
-    fileId: z.string().describe("The ID of the file to analyze"),
-    extractText: z.boolean().optional().default(true).describe("Whether to extract text content (for text files)"),
-    saveToNamespace: z.string().optional().describe("Optional namespace to save the extracted text"),
-    saveToKey: z.string().optional().describe("Optional key to save the extracted text under")
-  },
-  async ({ projectId, fileId, extractText = true, saveToNamespace, saveToKey }) => {
-    try {
-      const { content, file } = await projectFilesManager.getFileContent(projectId, fileId);
-      
-      if (!file) {
-        return {
-          content: [
-            {
-              type: "text",
-              text: `File not found with ID: ${fileId} in project: ${projectId}`,
-            }
-          ],
-        };
-      }
-      
-      // Determine if this is a text file
-      const isTextFile = file.contentType?.startsWith('text/') || 
-                         ['application/json', 'application/javascript', 'application/typescript', 'application/pdf'].includes(file.contentType || '');
-      // Determine if this is an image file
-      const isImageFile = file.contentType?.startsWith('image/') || 
-                          ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.bmp'].some(ext => 
-                            file.name.toLowerCase().endsWith(ext));
-      // Create file info message
-      const fileInfo = [
-        `File Name: ${file.name}`,
-        `Content Type: ${file.contentType || 'unknown'}`,
-        `Size: ${formatFileSize(file.size)}`,
-        `Created: ${formatDate(file.createdAt)}`,
-        `Last Updated: ${formatDate(file.updatedAt)}`,
-        `File Type: ${isTextFile ? 'Text' : isImageFile ? 'Image' : 'Binary'}`,
-        `Resource URI: project://${projectId}/file/${fileId}`,
-        `Direct URL: ${process.env.BASE_URL || ''}/api/project-files/${projectId}/${file.id}/download`
-      ].join('\n');
-      
-      // Extract text content if requested and possible
-      if (extractText && isTextFile && content) {
-        const textContent = content.toString('utf-8');
-        
-        // Save to scratchpad if requested
-        if (saveToNamespace && saveToKey) {
-          await memoryStore.storeValue(
-            saveToNamespace,
-            saveToKey,
-            textContent
-          );
-          
-          return {
-            content: [
-              {
-                type: "text",
-                text: fileInfo,
-              },
-              {
-                type: "text",
-                text: `File text content (${textContent.length} characters) has been extracted and saved to namespace "${saveToNamespace}" with key "${saveToKey}"`,
-              },
-              {
-                type: "text",
-                text: `Content: ${textContent}`,
-              },
-              {
-                type: "text",
-                text: `You can retrieve the content at any point in the future now using the scratchpad_memory tool with action="get", namespaceId="${saveToNamespace}", key="${saveToKey}"`,
-              },
-              {
-                type: "text",
-                text: `You can also access the content directly at project://${projectId}/file/${fileId}`,
-              }
-            ],
+            contents: [{
+              uri: uri.href,
+              mimeType: "application/json",
+              text: JSON.stringify({ 
+                error: "Project ID is required",
+                success: false
+              }, null, 2),
+            }]
           };
         }
         
-        // Truncate text if too long
-        const maxPreviewLength = 1500;
-        const truncated = textContent.length > maxPreviewLength;
-        const previewText = truncated 
-          ? textContent.substring(0, maxPreviewLength) + `...\n[Content truncated. Total length: ${textContent.length} characters]`
-          : textContent;
+        const files = await projectFilesManager.listProjectFiles(projectId);
         
-        return {
-          content: [
-            {
-              type: "text",
-              text: fileInfo,
-            },
-            {
-              type: "text",
-              text: `File Text Content${truncated ? ' (Preview)' : ''}:`,
-            },
-            {
-              type: "text",
-              text: previewText,
-            },
-            {
-              type: "text",
-              text: truncated 
-                ? `To see the full content, access the resource directly at project://${projectId}/file/${fileId}`
-                : "",
-            }
-          ],
-        };
-      } else if (!isTextFile && content) {
-        // For binary files, just return the info
-        return {
-          content: [
-            {
-              type: "text",
-              text: fileInfo,
-            },
-            {
-              type: "text",
-              text: `Binary file content (base64): ${content?.toString('base64') || "Content not available or extraction not requested."}`,
-            }
-          ],
-        };
-      } else {
-        return {
-          content: [
-            {
-              type: "text",
-              text: fileInfo,
-            },
-            {
-              type: "text",
-              text: content?.toString('utf-8') || content?.toString('base64') || "Content not available or extraction not requested.",
-            }
-          ],
-        };
-      }
-    } catch (error: any) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Error analyzing file: ${error.message}`,
-          }
-        ],
-      };
-    }
-  }
-);
-
-// Add tool for notifying file changes from the UI
-server.tool(
-  "project_files_notify",
-  "Notify the MCP server of file changes (create, update, delete) to update subscribers. This is mainly for internal use by the application.",
-  {
-    projectId: z.string().describe("The ID of the project"),
-    fileId: z.string().optional().describe("Optional ID of the specific file that changed"),
-    changeType: z.enum(["create", "update", "delete"]).describe("The type of change that occurred"),
-    silent: z.boolean().optional().default(false).describe("Whether to suppress notification messages (for internal use)")
-  },
-  async ({ projectId, fileId, changeType, silent = false }) => {
-    try {
-      // Notify subscribers of the change
-      projectFilesManager.notifyFileChange(projectId, fileId, changeType);
-      
-      // Clear cache to force refresh on next access
-      
-      if (silent) {
-        // Just return a simple success message for internal use
-        return {
-          content: [
-            {
-              type: "text",
-              text: `File change notification processed.`,
-            }
-          ],
-        };
-      }
-      
-      // For interactive use
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Successfully notified subscribers of ${changeType} operation${fileId ? ` for file ${fileId}` : ''} in project ${projectId}.`,
-          },
-          {
-            type: "text",
-            text: `Subscribers will receive updates about this change.`,
-          }
-        ],
-      };
-    } catch (error: any) {
-      return {
-        content: [
-          {
-            type: "text",
-            text: `Error notifying file change: ${error.message}`,
-          }
-        ],
-      };
-    }
-  }
-);
-
-// Add resource for finding a file by ID
-server.resource(
-  "project-file-by-id",
-  new ResourceTemplate("project://{projectId}/file/id/{fileId}", { list: undefined }),
-  async (uri, params) => {
-    try {
-      const projectId = params.projectId as string;
-      const fileId = params.fileId as string;
-      
-      if (!projectId || !fileId) {
-        return {
-          contents: [{
-            uri: uri.href,
-            mimeType: "application/json",
-            text: JSON.stringify({ 
-              error: "Project ID and File ID are required",
-              success: false
-            }, null, 2),
-          }]
-        };
-      }
-      
-      // Find the file
-      const file = await projectFilesManager.findFileById(projectId, fileId);
-      
-      if (!file) {
-        return {
-          contents: [{
-            uri: uri.href,
-            mimeType: "application/json",
-            text: JSON.stringify({ 
-              error: "File not found",
-              success: false,
-              projectId,
-              fileId
-            }, null, 2),
-          }]
-        };
-      }
-      
-      // Return file metadata with access links
-      return {
-        contents: [{
-          uri: uri.href,
-          mimeType: "application/json",
-          text: JSON.stringify({ 
-            success: true,
-            file: {
-              id: file.id,
-              name: file.name,
-              contentType: file.contentType || 'application/octet-stream',
-              size: file.size,
-              sizeFormatted: formatFileSize(file.size),
-              createdAt: file.createdAt,
-              updatedAt: file.updatedAt,
-              // Add direct access URIs for convenience
-              contentUri: `project://${projectId}/file/${file.id}`,
-              searchResultsUri: `project://${projectId}/search?fileId=${file.id}`
-            },
-            _tip: "To access the file content, use the contentUri link."
-          }, null, 2),
-        }]
-      };
-    } catch (error) {
-      console.error("Error finding file by ID:", error);
-      return {
-        contents: [{
-          uri: uri.href,
-          mimeType: "application/json",
-          text: JSON.stringify({ 
-            error: "Failed to find file",
-            success: false
-          }, null, 2),
-        }]
-      };
-    }
-  }
-);
-
-// Add a resource for accessing files by name - more intuitive for LLMs
-server.resource(
-  "project-file-by-name",
-  new ResourceTemplate("project://{projectId}/filename/{fileName}", { list: undefined }),
-  async (uri, params) => {
-    try {
-      const projectId = params.projectId as string;
-      const fileName = params.fileName as string;
-      
-      if (!projectId || !fileName) {
-        return {
-          contents: [{
-            uri: uri.href,
-            mimeType: "application/json",
-            text: JSON.stringify({ 
-              error: "Project ID and file name are required",
-              success: false
-            }, null, 2),
-          }]
-        };
-      }
-      
-      // Find the file by name
-      const files = await projectFilesManager.searchProjectFiles(projectId, {
-        term: fileName,
-        exactMatch: true
-      });
-      
-      if (files.length === 0) {
-        // Try with partial match if exact match fails
-        const partialMatches = await projectFilesManager.searchProjectFiles(projectId, {
-          term: fileName,
-          exactMatch: false
+        // Format file information in a more structured way for easier LLM processing
+        const formattedFiles = files.map(file => {
+          return {
+            id: file.id,
+            name: file.name,
+            contentType: file.contentType || 'application/octet-stream',
+            size: file.size,
+            sizeFormatted: formatFileSize(file.size),
+            createdAt: file.createdAt,
+            updatedAt: file.updatedAt,
+            // Resource URIs for accessing this file
+            fileUri: `project://${projectId}/file/${file.id}`,
+            fileByNameUri: `project://${projectId}/filename/${encodeURIComponent(file.name)}`
+          };
         });
         
-        if (partialMatches.length === 0) {
+        // Create a helpful response
+        const response = {
+          success: true,
+          projectId,
+          fileCount: files.length,
+          files: formattedFiles,
+          help: {
+            availableResources: [
+              { pattern: `project://${projectId}/files`, description: "List all files in this project" },
+              { pattern: `project://${projectId}/file/{fileId}`, description: "Get file content by ID" },
+              { pattern: `project://${projectId}/filename/{fileName}`, description: "Get file content by name" }
+            ]
+          }
+        };
+        
+        return {
+          contents: [{
+            uri: uri.href,
+            mimeType: "application/json",
+            text: JSON.stringify(response, null, 2)
+          }]
+        };
+      } catch (error) {
+        console.error("Error listing project files:", error);
+        return {
+          contents: [{
+            uri: uri.href,
+            mimeType: "application/json",
+            text: JSON.stringify({ 
+              error: "Failed to list project files",
+              success: false,
+              message: error instanceof Error ? error.message : String(error)
+            }, null, 2),
+          }]
+        };
+      }
+    }
+  },
+  {
+    id: "project-file-by-id",
+    template: new ResourceTemplate("project://{projectId}/file/{fileId}", { list: undefined }),
+    description: "Gets content of a specific file by its ID",
+    handler: async (uri, params) => {
+      try {
+        const projectId = params.projectId as string;
+        const fileId = params.fileId as string;
+        
+        if (!projectId || !fileId) {
+          return {
+            contents: [{
+              uri: uri.href,
+              mimeType: "application/json",
+              text: JSON.stringify({ 
+                error: "Project ID and File ID are required",
+                success: false
+              }, null, 2),
+            }]
+          };
+        }
+        
+        const { content, file } = await projectFilesManager.getFileContent(projectId, fileId);
+        
+        if (!file) {
           return {
             contents: [{
               uri: uri.href,
@@ -1711,219 +1098,390 @@ server.resource(
                 error: "File not found",
                 success: false,
                 projectId,
-                fileName,
-                suggestion: "Try listing all files with project://" + projectId + "/files"
+                fileId
               }, null, 2),
             }]
           };
         }
         
-        // Return matches with suggestions
+        if (!content) {
+          return {
+            contents: [{
+              uri: uri.href,
+              mimeType: "application/json",
+              text: JSON.stringify({ 
+                error: "File content could not be retrieved",
+                success: false
+              }, null, 2),
+            }]
+          };
+        }
+        
+        // Prepare file metadata
+        const metadata = {
+          id: file.id,
+          name: file.name,
+          contentType: file.contentType,
+          size: file.size,
+          sizeFormatted: formatFileSize(file.size),
+          createdAt: file.createdAt,
+          updatedAt: file.updatedAt
+        };
+        
+        // Special handling for PDFs - return a text description instead of binary data
+        if (isPdfFile(file.contentType) || file.name.toLowerCase().endsWith('.pdf')) {
+          return {
+            contents: [{
+              uri: uri.href,
+              mimeType: "text/plain",
+              text: `PDF File: ${file.name}
+Size: ${formatFileSize(file.size)}
+Type: ${file.contentType}
+Date: ${file.updatedAt}
+
+This is a PDF document with ID ${file.id}. The PDF binary content is available but not directly shown here.
+To work with this PDF, you would typically need to:
+1. Extract the text content
+2. Parse its structure
+3. Analyze any contained images
+
+You can refer to this file by its URI: ${uri.href}`,
+              metadata: JSON.stringify(metadata)
+            }]
+          };
+        }
+        
+        // Return content based on file type
+        if (isTextFile(file.contentType) || isTextFileName(file.name)) {
+          return {
+            contents: [{
+              uri: uri.href,
+              mimeType: file.contentType || "text/plain",
+              text: content.toString('utf-8'),
+              metadata: JSON.stringify(metadata)
+            }]
+          };
+        }
+        
+        // For binary files, encode as base64
         return {
           contents: [{
             uri: uri.href,
-            mimeType: "text/plain",
-            text: `
-FILE NOT FOUND: "${fileName}"
-
-However, I found ${partialMatches.length} similar files that might match what you're looking for:
-
-${partialMatches.map((file, index) => `${index + 1}. ${file.name} (${file.contentType || 'unknown'})
-   Access URI: project://${projectId}/file/${file.id}
-   Direct URL: ${process.env.BASE_URL || ''}/api/project-files/${projectId}/${file.id}/download
-`).join('\n')}
-
-Please try one of these files using the Access URI provided.
-DO NOT USE PROJECT FILE ANALYZE TOOLS. Use the URIs directly.
-`,
+            mimeType: file.contentType || "application/octet-stream", 
+            blob: content.toString('base64'),
+            metadata: JSON.stringify(metadata)
           }]
         };
-      }
-      
-      // In case there are multiple exact matches (shouldn't happen, but just in case)
-      const file = files[0];
-      const fileId = file.id;
-      
-      // Now redirect to the file content using the ID
-      const { content } = await projectFilesManager.getFileContent(projectId, fileId);
-      
-      if (!content) {
+      } catch (error) {
+        console.error("Error getting file content:", error);
         return {
           contents: [{
             uri: uri.href,
             mimeType: "application/json",
             text: JSON.stringify({ 
-              error: "File content not found",
+              error: "Failed to get file content",
               success: false,
-              projectId,
-              fileName,
-              fileId
+              message: error instanceof Error ? error.message : String(error)
             }, null, 2),
           }]
         };
       }
+    }
+  },
+  {
+    id: "project-file-by-name",
+    template: new ResourceTemplate("project://{projectId}/filename/{fileName}", { list: undefined }),
+    description: "Gets content of a specific file by its name",
+    handler: async (uri, params) => {
+      try {
+        const projectId = params.projectId as string;
+        const fileName = params.fileName as string;
+        
+        if (!projectId || !fileName) {
+          return {
+            contents: [{
+              uri: uri.href,
+              mimeType: "application/json",
+              text: JSON.stringify({ 
+                error: "Project ID and file name are required",
+                success: false
+              }, null, 2),
+            }]
+          };
+        }
+        
+        // Get the list of files and find the one matching the name
+        const decodedFileName = decodeURIComponent(fileName);
+        const files = await projectFilesManager.listProjectFiles(projectId);
+        const matchingFile = files.find(file => file.name === decodedFileName);
+        
+        if (!matchingFile) {
+          return {
+            contents: [{
+              uri: uri.href,
+              mimeType: "application/json",
+              text: JSON.stringify({ 
+                error: "File not found",
+                success: false,
+                projectId,
+                fileName: decodedFileName
+              }, null, 2),
+            }]
+          };
+        }
+        
+        // Get the content using the file ID
+        const { content, file } = await projectFilesManager.getFileContent(projectId, matchingFile.id);
+        
+        if (!file || !content) {
+          return {
+            contents: [{
+              uri: uri.href,
+              mimeType: "application/json",
+              text: JSON.stringify({ 
+                error: "File content could not be retrieved",
+                success: false
+              }, null, 2),
+            }]
+          };
+        }
+        
+        // Prepare file metadata
+        const metadata = {
+          id: file.id,
+          name: file.name,
+          contentType: file.contentType,
+          size: file.size,
+          sizeFormatted: formatFileSize(file.size),
+          createdAt: file.createdAt,
+          updatedAt: file.updatedAt
+        };
+        
+        // Special handling for PDFs - return a text description instead of binary data
+        if (isPdfFile(file.contentType) || file.name.toLowerCase().endsWith('.pdf')) {
+          return {
+            contents: [{
+              uri: uri.href,
+              mimeType: "text/plain",
+              text: `PDF File: ${file.name}
+Size: ${formatFileSize(file.size)}
+Type: ${file.contentType}
+Date: ${file.updatedAt}
+
+This is a PDF document with ID ${file.id}. The PDF binary content is available but not directly shown here.
+To work with this PDF, you would typically need to:
+1. Extract the text content
+2. Parse its structure
+3. Analyze any contained images
+
+You can refer to this file by its URI: ${uri.href}`,
+              metadata: JSON.stringify(metadata)
+            }]
+          };
+        }
+        
+        // Return content based on file type
+        if (isTextFile(file.contentType) || isTextFileName(file.name)) {
+          return {
+            contents: [{
+              uri: uri.href,
+              mimeType: file.contentType || "text/plain",
+              text: content.toString('utf-8'),
+              metadata: JSON.stringify(metadata)
+            }]
+          };
+        }
+        
+        // For binary files, encode as base64
+        return {
+          contents: [{
+            uri: uri.href,
+            mimeType: file.contentType || "application/octet-stream",
+            blob: content.toString('base64'),
+            metadata: JSON.stringify(metadata)
+          }]
+        };
+      } catch (error) {
+        console.error("Error getting file by name:", error);
+        return {
+          contents: [{
+            uri: uri.href,
+            mimeType: "application/json",
+            text: JSON.stringify({ 
+              error: "Failed to get file by name",
+              success: false,
+              message: error instanceof Error ? error.message : String(error)
+            }, null, 2),
+          }]
+        };
+      }
+    }
+  }
+];
+
+// Register all project resource definitions
+projectResourceDefinitions.forEach(resource => {
+  server.resource(resource.id, resource.template, resource.handler);
+});
+
+// New resource: list all projects and their files
+server.resource(
+  "all-projects-files",
+  "projects://all",
+  async (uri) => {
+    try {
+      console.log("[MCP] Fetching all projects and their files");
       
-      // Determine if this is a text file for better handling
-      const isTextFile = file.contentType?.startsWith('text/') || 
-                        ['application/json', 'application/javascript', 'application/typescript'].includes(file.contentType || '');
+      // Get all projects from the database
+      const projects = await db.select().from(schema.ProjectSchema).execute();
       
-      // Create a publicly accessible download URL for binary files
-      const downloadUrl = `${process.env.BASE_URL || ''}/api/project-files/${projectId}/${fileId}/download`;
+      if (!projects || projects.length === 0) {
+        return {
+          contents: [{
+            uri: uri.href,
+            mimeType: "application/json",
+            text: JSON.stringify({ 
+              success: true,
+              projectCount: 0,
+              projects: [],
+              message: "No projects found"
+            }, null, 2)
+          }]
+        };
+      }
       
-      // Prepare file metadata
-      const metadata = {
-        id: file.id,
-        name: file.name,
-        contentType: file.contentType,
-        size: file.size,
-        sizeFormatted: formatFileSize(file.size),
-        createdAt: file.createdAt,
-        updatedAt: file.updatedAt,
-        isTextFile,
-        downloadUrl,
-        uri: uri.href,
-        // Add the ID-based URI for reference
-        idBasedUri: `project://${projectId}/file/${fileId}`
+      // For each project, get its files
+      const projectsWithFiles = await Promise.all(
+        projects.map(async (project) => {
+          let files: any[] = [];
+          
+          // Try to get files from database
+          try {
+            const dbFiles = await db.select().from(schema.ProjectFileSchema)
+              .where(eq(schema.ProjectFileSchema.projectId, project.id))
+              .execute();
+              
+            if (dbFiles && dbFiles.length > 0) {
+              files = dbFiles.map(file => ({
+                id: file.id,
+                name: file.name,
+                contentType: file.contentType || 'application/octet-stream',
+                size: file.size,
+                sizeFormatted: formatFileSize(file.size),
+                createdAt: file.createdAt,
+                updatedAt: file.updatedAt,
+                // Resource URIs for accessing this file
+                fileUri: `project://${project.id}/file/${file.id}`,
+                fileByNameUri: `project://${project.id}/filename/${encodeURIComponent(file.name)}`
+              }));
+            } else if (azureStorage) {
+              // If not in database, try Azure Storage
+              const azureFiles = await azureStorage.listProjectFiles(project.id);
+              
+              if (azureFiles && azureFiles.length > 0) {
+                files = azureFiles.map(file => ({
+                  id: file.id,
+                  name: file.name,
+                  contentType: file.contentType || 'application/octet-stream',
+                  size: file.size,
+                  sizeFormatted: formatFileSize(file.size),
+                  createdAt: file.createdAt,
+                  updatedAt: file.updatedAt,
+                  // Resource URIs for accessing this file
+                  fileUri: `project://${project.id}/file/${file.id}`,
+                  fileByNameUri: `project://${project.id}/filename/${encodeURIComponent(file.name)}`
+                }));
+              }
+            }
+          } catch (error) {
+            console.error(`Error fetching files for project ${project.id}:`, error);
+          }
+          
+          return {
+            id: project.id,
+            name: project.name,
+            createdAt: project.createdAt,
+            updatedAt: project.updatedAt,
+            fileCount: files.length,
+            files,
+            // Resource URIs for this project
+            projectUri: `project://${project.id}/files`
+          };
+        })
+      );
+      
+      // Format the response to be clear and helpful
+      const response = {
+        success: true,
+        projectCount: projects.length,
+        totalFileCount: projectsWithFiles.reduce((total, p) => total + p.fileCount, 0),
+        projects: projectsWithFiles,
+        help: {
+          availableResources: [
+            { pattern: "projects://all", description: "List all projects and their files" },
+            { pattern: "project://{projectId}/files", description: "List all files in a specific project" },
+            { pattern: "project://{projectId}/file/{fileId}", description: "Get file content by ID" },
+            { pattern: "project://{projectId}/filename/{fileName}", description: "Get file content by name" }
+          ]
+        }
       };
       
-      // Special handling for PDF files
-      if (file.contentType === 'application/pdf') {
-        // For PDFs, provide clear download instructions and don't return blob data
-        return {
-          contents: [{
-            uri: uri.href,
-            mimeType: "text/plain",
-            text: `
-PDF FILE: ${file.name} (${formatFileSize(file.size)})
-
-This is a PDF file and cannot be displayed as text content directly.
-
-DIRECT DOWNLOAD LINK:
-${downloadUrl}
-
-You can view this PDF by:
-
-1. Visit the above URL directly in a browser
-2. Use a Markdown image: ![${file.name}](${downloadUrl})
-3. Create a download link: [Download ${file.name}](${downloadUrl})
-
-PDF METADATA:
-ID: ${file.id}
-Name: ${file.name}
-Size: ${formatFileSize(file.size)}
-Last Updated: ${formatDate(file.updatedAt)}
-
-DO NOT USE PROJECT FILE ANALYZE TOOLS. Use the download link above.
-`,
-            metadata: JSON.stringify({
-              ...metadata,
-              isPdf: true,
-              accessMethod: "Use the download URL directly. Do not use custom tools."
-            })
-          }]
-        };
-      }
-      
-      // For binary image files, provide embedded markdown image tag
-      if (file.contentType?.startsWith('image/')) {
-        return {
-          contents: [{
-            uri: uri.href,
-            mimeType: "text/plain",
-            text: `
-IMAGE FILE: ${file.name} (${formatFileSize(file.size)})
-
-This is an image file that can be viewed using the direct URL below.
-
-DIRECT IMAGE URL:
-${downloadUrl}
-
-You can display this image directly with Markdown:
-
-![${file.name}](${downloadUrl})
-
-IMAGE METADATA:
-ID: ${file.id}
-Name: ${file.name}
-Type: ${file.contentType}
-Size: ${formatFileSize(file.size)}
-Last Updated: ${formatDate(file.updatedAt)}
-
-DO NOT USE PROJECT FILE ANALYZE TOOLS. Use the image URL above.
-`,
-            metadata: JSON.stringify({
-              ...metadata,
-              isImage: true,
-              accessMethod: "Use the image URL directly in markdown. Do not use custom tools."
-            })
-          }]
-        };
-      }
-      
-      // For other binary files, return with instructions but no blob data
-      if (!isTextFile) {
-        return {
-          contents: [{
-            uri: uri.href,
-            mimeType: "text/plain",
-            text: `
-BINARY FILE: ${file.name} (${formatFileSize(file.size)})
-
-This is a binary file (${file.contentType}) and cannot be displayed as text directly.
-
-DIRECT DOWNLOAD LINK:
-${downloadUrl}
-
-You can access this file by:
-1. Opening the URL directly in a browser
-2. Creating a download link: [Download ${file.name}](${downloadUrl})
-
-FILE METADATA:
-ID: ${file.id}
-Name: ${file.name}
-Type: ${file.contentType}
-Size: ${formatFileSize(file.size)}
-Last Updated: ${formatDate(file.updatedAt)}
-
-DO NOT USE PROJECT FILE ANALYZE TOOLS. Use the download link above.
-`,
-            metadata: JSON.stringify({
-              ...metadata,
-              isBinary: true,
-              accessMethod: "Use the download URL directly. Do not use custom tools."
-            })
-          }]
-        };
-      }
-      
-      // For text files, return normal content
       return {
         contents: [{
           uri: uri.href,
-          mimeType: file.contentType || "text/plain",
-          text: content.toString('utf-8'),
-          metadata: JSON.stringify({
-            ...metadata,
-            isText: true,
-            accessMethod: "This text content is already shown. No tools needed."
-          })
+          mimeType: "application/json",
+          text: JSON.stringify(response, null, 2)
         }]
       };
     } catch (error) {
-      console.error("Error getting file by name:", error);
+      console.error("Error listing all projects and files:", error);
       return {
         contents: [{
           uri: uri.href,
           mimeType: "application/json",
           text: JSON.stringify({ 
-            error: "Failed to get file by name",
-            success: false
+            error: "Failed to list projects and files",
+            success: false,
+            message: error instanceof Error ? error.message : String(error)
           }, null, 2),
         }]
       };
     }
   }
 );
+
+// Helper functions for determining file types
+function isTextFile(contentType: string): boolean {
+  if (!contentType) return false;
+  return contentType.startsWith('text/') || 
+         ['application/json', 'application/javascript', 'application/typescript', 
+          'application/xml', 'application/yaml', 'application/x-yaml'].includes(contentType);
+}
+
+function isTextFileName(fileName: string): boolean {
+  if (!fileName) return false;
+  const textExtensions = ['.txt', '.md', '.markdown', '.json', '.js', '.ts', '.jsx', '.tsx', 
+                          '.html', '.htm', '.css', '.scss', '.less', '.xml', '.yaml', '.yml', 
+                          '.csv', '.log', '.sh', '.bash', '.zsh', '.bat', '.ps1', '.py', 
+                          '.rb', '.java', '.c', '.cpp', '.h', '.hpp', '.cs', '.php'];
+  return textExtensions.some(ext => fileName.toLowerCase().endsWith(ext));
+}
+
+// function isImageFile(contentType: string): boolean {
+//   if (!contentType) return false;
+//   return contentType.startsWith('image/');
+// }
+
+// function isImageFileName(fileName: string): boolean {
+//   if (!fileName) return false;
+//   const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.bmp', '.ico', '.tiff', '.tif'];
+//   return imageExtensions.some(ext => fileName.toLowerCase().endsWith(ext));
+// }
+
+function isPdfFile(contentType: string): boolean {
+  if (!contentType) return false;
+  return contentType === 'application/pdf';
+}
 
 // Helper function to format file size
 function formatFileSize(bytes: number): string {
@@ -1934,162 +1492,6 @@ function formatFileSize(bytes: number): string {
   
   return parseFloat((bytes / Math.pow(1024, i)).toFixed(2)) + ' ' + sizes[i];
 }
-
-// Helper function to format date
-function formatDate(date: Date | undefined): string {
-  if (!date) return 'Unknown';
-  return new Date(date).toISOString();
-}
-
-// Adding a simplified search tool with correct typing
-server.tool(
-  "project_files_search",
-  "Search for files in a project by name, ID, or content",
-  {
-    projectId: z.string().describe("The ID of the project to search for files in"),
-    searchType: z.enum(["filename", "content", "id"]).describe("Search by filename, content, or file ID"),
-    query: z.string().describe("The search term or file ID"),
-    options: z.object({
-      caseSensitive: z.boolean().optional().describe("Whether the search should be case sensitive"),
-      limit: z.number().optional().describe("Maximum number of results to return"),
-      fileExtensions: z.array(z.string()).optional().describe("Limit to specific file extensions"),
-      contextLines: z.number().optional().describe("Number of context lines for content searches"),
-      fileIds: z.array(z.string()).optional().describe("Specific files to search in by ID"),
-      contentType: z.string().optional().describe("Filter by content type"),
-      minSize: z.number().optional().describe("Minimum file size in bytes"),
-      maxSize: z.number().optional().describe("Maximum file size in bytes"),
-      exactMatch: z.boolean().optional().describe("Whether filename matches should be exact"),
-      dateAfter: z.string().optional().describe("ISO date string - only include files after this date"),
-      dateBefore: z.string().optional().describe("ISO date string - only include files before this date")
-    }).optional().describe("Additional search options")
-  },
-  async ({ projectId, searchType, query, options = {} }) => {
-    try {
-      const results = {
-        content: [] as Array<{ type: "text"; text: string }>
-      };
-      
-      // Add a message
-      const addMessage = (text: string) => {
-        results.content.push({ type: "text", text });
-      };
-      
-      // Common logic for formatting file info
-      const formatFile = (file: any) => {
-        return `Name: ${file.name}
-ID: ${file.id}
-Type: ${file.contentType || 'unknown'}
-Size: ${formatFileSize(file.size)}
-Last Updated: ${formatDate(file.updatedAt)}
-URI: project://${projectId}/file/${file.id}`;
-      };
-      
-      // Process search options
-      const processedOptions: any = { ...options };
-      if (options.dateAfter) {
-        processedOptions.dateAfter = new Date(options.dateAfter);
-      }
-      if (options.dateBefore) {
-        processedOptions.dateBefore = new Date(options.dateBefore);
-      }
-      
-      // Search by ID
-      if (searchType === "id") {
-        const file = await projectFilesManager.findFileById(projectId, query);
-        
-        if (!file) {
-          addMessage(`No file found with ID: ${query}`);
-          addMessage(`Verify that the file ID is correct and exists in this project.`);
-          return results;
-        }
-        
-        addMessage(`Found file with ID: ${query}`);
-        addMessage(formatFile(file));
-        addMessage(`To access this file, use: project://${projectId}/file/${file.id}`);
-      } 
-      // Search by filename
-      else if (searchType === "filename") {
-        const files = await projectFilesManager.searchProjectFiles(projectId, {
-          term: query,
-          contentType: processedOptions.contentType,
-          minSize: processedOptions.minSize,
-          maxSize: processedOptions.maxSize,
-          limit: processedOptions.limit,
-          exactMatch: processedOptions.exactMatch,
-          fileIds: processedOptions.fileIds,
-          dateAfter: processedOptions.dateAfter,
-          dateBefore: processedOptions.dateBefore
-        });
-        
-        if (files.length === 0) {
-          addMessage(`No files found matching "${query}".`);
-          addMessage(`Try broadening your search or verify that files exist in this project.`);
-          return results;
-        }
-        
-        addMessage(`Found ${files.length} files matching "${query}"`);
-        
-        // Add first 5 files with details
-        files.slice(0, 5).forEach(file => {
-          addMessage(`- ${file.name} (${formatFileSize(file.size)}, ${file.contentType || 'unknown'})
-  ID: ${file.id}
-  Access: project://${projectId}/file/${file.id}`);
-        });
-        
-        if (files.length > 5) {
-          addMessage(`... and ${files.length - 5} more results`);
-        }
-      } 
-      // Search by content
-      else {
-        const contentResults = await projectFilesManager.searchFileContents(
-          projectId,
-          query,
-          {
-            fileIds: processedOptions.fileIds,
-            fileExtensions: processedOptions.fileExtensions,
-            caseSensitive: processedOptions.caseSensitive,
-            maxResults: processedOptions.limit,
-            contextLines: processedOptions.contextLines || 2
-          }
-        );
-        
-        if (contentResults.matches.length === 0) {
-          addMessage(`No files found containing "${query}".`);
-          addMessage(`Try a different search term or check that your project contains text files.`);
-          return results;
-        }
-        
-        const totalMatches = contentResults.matches.reduce((sum, file) => sum + file.matchCount, 0);
-        addMessage(`Found ${totalMatches} content matches for "${query}" across ${contentResults.matches.length} files`);
-        
-        // Add first 3 files with match info
-        contentResults.matches.slice(0, 3).forEach(match => {
-          addMessage(`File: ${match.fileName} (${match.matchCount} matches, ID: ${match.fileId})`);
-          
-          // Add first 3 matches per file
-          match.contexts.slice(0, 3).forEach(ctx => {
-            addMessage(`  Line ${ctx.line}: ${ctx.preview.replace(/\[MATCH\]/g, '**').replace(/\[\/MATCH\]/g, '**')}`);
-          });
-          
-          if (match.contexts.length > 3) {
-            addMessage(`  ... and ${match.contexts.length - 3} more matches in this file`);
-          }
-        });
-        
-        if (contentResults.matches.length > 3) {
-          addMessage(`... and matches in ${contentResults.matches.length - 3} more files`);
-        }
-      }
-      
-      return results;
-    } catch (error: any) {
-      return {
-        content: [{ type: "text", text: `Error searching files: ${error.message}` }]
-      };
-    }
-  }
-);
 
 const transport = new StdioServerTransport();
 

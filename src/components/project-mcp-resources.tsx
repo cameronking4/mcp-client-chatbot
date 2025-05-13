@@ -4,9 +4,22 @@ import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "ui/card";
 import { Badge } from "ui/badge";
 import { Button } from "ui/button";
-import { Copy, FileIcon, CheckCircle, AlertCircle, Link2, GanttChartIcon } from "lucide-react";
+import { Copy, FileIcon, CheckCircle, AlertCircle, Link2, GanttChartIcon, FileText, FolderOpen } from "lucide-react";
 import { toast } from "sonner";
-import { cn } from "lib/utils";
+
+interface ProjectFile {
+  id: string;
+  name: string;
+  contentType?: string;
+  size: number;
+  sizeFormatted?: string;
+  createdAt: Date;
+  updatedAt: Date;
+  fileListUri?: string;
+  fileByIdUri?: string;
+  fileByNameUri?: string;
+  directUrl?: string;
+}
 
 interface ProjectMCPResourcesProps {
   projectId: string;
@@ -16,10 +29,13 @@ export function ProjectMCPResources({ projectId }: ProjectMCPResourcesProps) {
   const [copied, setCopied] = useState<string | null>(null);
   const [resourceStatus, setResourceStatus] = useState<"loading" | "success" | "error">("loading");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [files, setFiles] = useState<ProjectFile[]>([]);
+  const [showFiles, setShowFiles] = useState(false);
 
   // Resource URIs
   const fileListResource = `project://${projectId}/files`;
-  const fileContentTemplate = `project://${projectId}/file/{fileId}`;
+  const fileByIdTemplate = `project://${projectId}/file/{fileId}`;
+  const fileByNameTemplate = `project://${projectId}/filename/{fileName}`;
 
   // Function to copy text to clipboard
   const copyToClipboard = (text: string, label: string) => {
@@ -29,29 +45,85 @@ export function ProjectMCPResources({ projectId }: ProjectMCPResourcesProps) {
     setTimeout(() => setCopied(null), 2000);
   };
   
-  // Test resource availability
-  useEffect(() => {
-    const testResources = async () => {
-      try {
-        // We'll just check if our Azure implementation is working
-        const response = await fetch(`/api/project-files/${projectId}`);
-        
-        if (!response.ok) {
-          throw new Error(`Failed to fetch project files: ${response.statusText}`);
-        }
-        
-        setResourceStatus("success");
-      } catch (error) {
-        console.error("Error testing MCP resources:", error);
-        setResourceStatus("error");
-        setErrorMessage(error instanceof Error ? error.message : String(error));
+  // Fetch project files
+  const fetchFiles = async () => {
+    try {
+      setResourceStatus("loading");
+      // Test the direct files endpoint 
+      const response = await fetch(`/api/project-files/${projectId}`);
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch project files: ${response.statusText}`);
       }
-    };
-    
+      
+      const data = await response.json();
+      setFiles(data.files || []);
+      setResourceStatus("success");
+    } catch (error) {
+      console.error("Error fetching project files:", error);
+      
+      // Try the debug endpoint we just created
+      try {
+        const debugResponse = await fetch(`/api/project-files/${projectId}/list-mcp-resources`);
+        if (debugResponse.ok) {
+          const debugData = await debugResponse.json();
+          if (debugData.files && debugData.files.length > 0) {
+            setFiles(debugData.files);
+            setResourceStatus("success");
+            return;
+          }
+        }
+      } catch (debugError) {
+        console.error("Debug endpoint also failed:", debugError);
+      }
+      
+      setResourceStatus("error");
+      setErrorMessage(error instanceof Error ? error.message : String(error));
+    }
+  };
+  
+  // Load files on component mount
+  useEffect(() => {
     if (projectId) {
-      testResources();
+      fetchFiles();
     }
   }, [projectId]);
+
+  // Format file size
+  const formatFileSize = (bytes: number): string => {
+    if (bytes === 0) return '0 Bytes';
+    const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(1024));
+    return parseFloat((bytes / Math.pow(1024, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+
+  // Get icon for file type
+  const getFileIcon = (contentType?: string, fileName?: string) => {
+    if (!contentType && !fileName) return <FileIcon className="size-4" />;
+    
+    // Check content type first
+    if (contentType) {
+      if (contentType.startsWith('image/')) return "🖼️";
+      if (contentType === 'application/pdf') return "📄";
+      if (contentType.includes('spreadsheet') || contentType.includes('csv')) return "📊";
+      if (contentType.includes('word') || contentType.includes('document')) return "📝";
+      if (contentType.includes('presentation')) return "📑";
+    }
+    
+    // Check file extension
+    if (fileName) {
+      const ext = fileName.split('.').pop()?.toLowerCase();
+      if (ext === 'pdf') return "📄";
+      if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(ext || '')) return "🖼️";
+      if (['csv', 'xlsx', 'xls'].includes(ext || '')) return "📊";
+      if (['doc', 'docx', 'txt', 'rtf'].includes(ext || '')) return "📝";
+      if (['ppt', 'pptx'].includes(ext || '')) return "📑";
+      if (['mp3', 'wav', 'ogg'].includes(ext || '')) return "🎵";
+      if (['mp4', 'avi', 'mov', 'webm'].includes(ext || '')) return "🎬";
+    }
+    
+    return <FileIcon className="size-4" />;
+  };
 
   return (
     <Card>
@@ -112,35 +184,127 @@ export function ProjectMCPResources({ projectId }: ProjectMCPResourcesProps) {
                   )}
                 </Button>
               </div>
+              <div className="text-xs text-muted-foreground">
+                Lists all files in the project with metadata and access URIs.
+              </div>
             </div>
             
             <div className="space-y-2">
-              <div className="text-sm font-medium">Get file content</div>
+              <div className="text-sm font-medium">Get file by ID</div>
               <div className="flex items-center gap-2">
                 <div className="flex-1 flex items-center gap-2">
-                  <pre className="py-1 px-2 text-xs bg-muted rounded-md font-mono">{fileContentTemplate}</pre>
+                  <pre className="py-1 px-2 text-xs bg-muted rounded-md font-mono">{fileByIdTemplate}</pre>
                   <Badge variant="secondary" className="text-xs">
-                    <Link2 size={10} className="mr-1" /> Content URI
+                    <Link2 size={10} className="mr-1" /> Content by ID
                   </Badge>
                 </div>
                 <Button 
                   variant="ghost" 
                   size="icon" 
                   className="size-7" 
-                  onClick={() => copyToClipboard(fileContentTemplate, "content resource URI")}
+                  onClick={() => copyToClipboard(fileByIdTemplate, "file by ID URI")}
                 >
-                  {copied === "content resource URI" ? (
+                  {copied === "file by ID URI" ? (
                     <CheckCircle className="size-3.5 text-green-500" />
                   ) : (
                     <Copy className="size-3.5" />
                   )}
                 </Button>
               </div>
+              <div className="text-xs text-muted-foreground">
+                Get file content by its unique ID. Replace {"{fileId}"} with the actual file ID.
+              </div>
             </div>
             
-            <div className="text-xs text-muted-foreground mt-2">
-              <p>To use in chat, ask the AI about your files or reference these resources directly.</p>
-              <p className="mt-1">Example: "What files do I have in this project?" or "Read the content of file X"</p>
+            <div className="space-y-2">
+              <div className="text-sm font-medium">Get file by name (Recommended)</div>
+              <div className="flex items-center gap-2">
+                <div className="flex-1 flex items-center gap-2">
+                  <pre className="py-1 px-2 text-xs bg-muted rounded-md font-mono">{fileByNameTemplate}</pre>
+                  <Badge variant="secondary" className="text-xs">
+                    <FileText size={10} className="mr-1" /> Content by Name
+                  </Badge>
+                </div>
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  className="size-7" 
+                  onClick={() => copyToClipboard(fileByNameTemplate, "file by name URI")}
+                >
+                  {copied === "file by name URI" ? (
+                    <CheckCircle className="size-3.5 text-green-500" />
+                  ) : (
+                    <Copy className="size-3.5" />
+                  )}
+                </Button>
+              </div>
+              <div className="text-xs text-muted-foreground">
+                Get file content by name (more intuitive for AI). Replace {"{fileName}"} with the file name.
+              </div>
+            </div>
+            
+            {files.length > 0 && (
+              <div className="mt-4 pt-3 border-t border-border">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-sm font-medium">Available Files ({files.length})</h3>
+                  <Button
+                    variant="ghost" 
+                    size="sm"
+                    className="h-7 px-2 text-xs"
+                    onClick={() => setShowFiles(!showFiles)}
+                  >
+                    {showFiles ? "Hide Files" : "Show Files"}
+                    <FolderOpen className="ml-1 size-3.5" />
+                  </Button>
+                </div>
+                
+                {showFiles && (
+                  <div className="mt-2 space-y-2 max-h-[300px] overflow-y-auto">
+                    {files.map(file => (
+                      <div key={file.id} className="text-xs border rounded-md p-2">
+                        <div className="flex items-start gap-2">
+                          <div className="mt-0.5">
+                            {getFileIcon(file.contentType, file.name)}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="font-medium truncate">{file.name}</div>
+                            <div className="text-muted-foreground">{file.contentType} • {file.sizeFormatted || formatFileSize(file.size)}</div>
+                          </div>
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="size-6" 
+                            onClick={() => copyToClipboard(`project://${projectId}/filename/${encodeURIComponent(file.name)}`, `${file.name} URI`)}
+                          >
+                            {copied === `${file.name} URI` ? (
+                              <CheckCircle className="size-3.5 text-green-500" />
+                            ) : (
+                              <Copy className="size-3.5" />
+                            )}
+                          </Button>
+                        </div>
+                        <div className="mt-1.5 flex flex-wrap gap-1.5">
+                          <pre 
+                            className="py-0.5 px-1.5 text-[10px] bg-muted rounded-md font-mono cursor-pointer" 
+                            onClick={() => copyToClipboard(`project://${projectId}/filename/${encodeURIComponent(file.name)}`, `${file.name} URI`)}
+                          >
+                            project://{projectId}/filename/{file.name}
+                          </pre>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            
+            <div className="mt-4 pt-3 border-t border-border">
+              <div className="text-xs text-muted-foreground">
+                <p className="mb-1 font-medium">Usage examples:</p>
+                <p>• Ask: "What files do I have in this project?"</p>
+                <p>• Ask: "Show me the content of file X"</p>
+                <p>• Reference directly: "Check project://{projectId}/filename/example.txt for details"</p>
+              </div>
             </div>
           </>
         )}

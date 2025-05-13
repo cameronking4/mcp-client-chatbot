@@ -6,30 +6,76 @@ import { auth } from '@/lib/auth';
 import { eq } from 'drizzle-orm';
 import { generateUUID } from '../../../../lib/utils';
 
-// Handler for GET request to list files for a project
+/**
+ * API endpoint for listing files in a project
+ */
 export async function GET(
-  request: NextRequest,
+  req: NextRequest,
   { params }: { params: { projectId: string } }
 ) {
   try {
-    const session = await auth();
-    if (!session?.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    // Fix for synchronous parameter access - make a copy of the param
+    const projectId = params.projectId;
+    
+    if (!projectId) {
+      return NextResponse.json(
+        { error: "Project ID is required" },
+        { status: 400 }
+      );
     }
-
-    // Cast params as a constant to avoid the Next.js warning
-    const { projectId } = params;
-
+    
     // Fetch file metadata from the database
     const files = await db.select().from(schema.ProjectFileSchema)
       .where(eq(schema.ProjectFileSchema.projectId, projectId))
-      .orderBy(schema.ProjectFileSchema.createdAt);
-
-    return NextResponse.json({ files });
+      .execute();
+    
+    if (!files || files.length === 0) {
+      // If no files found in DB, try Azure Storage as fallback
+      try {
+        if (azureStorage) {
+          const azureFiles = await azureStorage.listProjectFiles(projectId);
+          
+          if (azureFiles && azureFiles.length > 0) {
+            return NextResponse.json({ 
+              files: azureFiles.map(file => ({
+                ...file,
+                sizeFormatted: formatFileSize(file.size)
+              }))
+            });
+          }
+        }
+      } catch (azureError) {
+        console.warn("Error fetching files from Azure:", azureError);
+      }
+      
+      // No files found in either place
+      return NextResponse.json({ files: [] });
+    }
+    
+    // Format file size for display
+    const formattedFiles = files.map(file => ({
+      ...file,
+      sizeFormatted: formatFileSize(file.size)
+    }));
+    
+    return NextResponse.json({ files: formattedFiles });
   } catch (error) {
-    console.error('Error fetching project files:', error);
-    return NextResponse.json({ error: 'Failed to fetch project files' }, { status: 500 });
+    console.error("Error fetching project files:", error);
+    return NextResponse.json(
+      { error: "Failed to fetch project files" },
+      { status: 500 }
+    );
   }
+}
+
+// Format file size for display
+function formatFileSize(bytes: number): string {
+  if (bytes === 0) return '0 Bytes';
+  
+  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(1024));
+  
+  return parseFloat((bytes / Math.pow(1024, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
 // Handler for POST request to upload a file

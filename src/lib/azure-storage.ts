@@ -31,9 +31,9 @@ class MockAzureStorageClient {
     console.log('Initializing mock Azure Storage container');
   }
   
-  private getBlobName(projectId: string, fileId: string): string {
-    return `${projectId}/${fileId}`;
-  }
+  // private getBlobName(projectId: string, fileId: string): string {
+  //   return `${projectId}/${fileId}`;
+  // }
   
   async uploadFile(
     projectId: string, 

@@ -446,8 +446,10 @@ class ProjectFilesManager extends EventEmitter {
    */
   async getFileContent(projectId: string, fileId: string): Promise<{ content: Buffer | null; file: ProjectFile | null }> {
     try {
+      console.log(`[MCP] Fetching file content for project: ${projectId}, file: ${fileId}`);
+      
       if (!azureStorage) {
-        console.warn("Azure Storage not configured");
+        console.warn("[MCP] Azure Storage not configured");
         return { content: null, file: null };
       }
       
@@ -470,9 +472,10 @@ class ProjectFilesManager extends EventEmitter {
             createdAt: file.createdAt,
             updatedAt: file.updatedAt
           };
+          console.log(`[MCP] Found file metadata in database: ${file.name}`);
         }
       } catch (dbError) {
-        console.warn("Database access failed, falling back to Azure Storage:", dbError);
+        console.warn("[MCP] Database access failed, falling back to Azure Storage:", dbError);
       }
       
       // If not found in database, try to get metadata from Azure
@@ -484,22 +487,33 @@ class ProjectFilesManager extends EventEmitter {
           if (fileMetadata && !fileMetadata.contentType) {
             fileMetadata.contentType = this.determineContentType(fileMetadata.name);
           }
+          console.log(`[MCP] Found file metadata in Azure: ${fileMetadata?.name}`);
         } catch (storageError) {
-          console.error("Error getting file metadata from Azure:", storageError);
+          console.error("[MCP] Error getting file metadata from Azure:", storageError);
           return { content: null, file: null };
         }
       }
       
       // Now get the file content from Azure
       try {
+        console.log(`[MCP] Fetching file content from Azure for: ${fileMetadata?.name}`);
         const content = await azureStorage.getFileContent(projectId, fileId);
+        console.log(`[MCP] Retrieved file content successfully, size: ${content.length} bytes`);
+        
+        // Special handling for PDF files - log additional info
+        if (fileMetadata?.contentType === 'application/pdf' || fileMetadata?.name.toLowerCase().endsWith('.pdf')) {
+          console.log(`[MCP] PDF file detected: ${fileMetadata.name}, size: ${content.length} bytes`);
+          // First few bytes of PDF for debugging
+          console.log(`[MCP] PDF header (first 20 bytes): ${content.slice(0, 20).toString('hex')}`);
+        }
+        
         return { content, file: fileMetadata };
       } catch (contentError) {
-        console.error("Error getting file content from Azure:", contentError);
+        console.error("[MCP] Error getting file content from Azure:", contentError);
         return { content: null, file: fileMetadata };
       }
     } catch (error) {
-      console.error("Error getting file content:", error);
+      console.error("[MCP] Error getting file content:", error);
       return { content: null, file: null };
     }
   }

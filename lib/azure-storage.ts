@@ -1,4 +1,4 @@
-import { BlobServiceClient, ContainerClient, BlockBlobClient } from '@azure/storage-blob';
+import { BlobServiceClient, ContainerClient } from '@azure/storage-blob';
 
 export interface ProjectFile {
   id: string;
