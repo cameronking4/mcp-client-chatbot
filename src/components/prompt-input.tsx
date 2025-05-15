@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, CornerRightUp, Paperclip, Pause, Settings2, X } from "lucide-react";
+import { ChevronDown, CornerRightUp, Paperclip, Pause, Settings2, X, Mic, MicOff } from "lucide-react";
 import { ReactNode, useMemo, useState, useRef, useEffect } from "react";
 import { Button } from "ui/button";
 import { PastesContentCard } from "./pasts-content";
@@ -18,6 +18,53 @@ import { SystemMessagePopup } from "./system-message-popup";
 import { MCPServerBindingSelector } from "./mcp-server-binding";
 import { MCPServerBinding } from "app-types/mcp";
 import { toast } from "sonner";
+
+// Speech Recognition type definition
+interface SpeechRecognition extends EventTarget {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  start: () => void;
+  stop: () => void;
+  abort: () => void;
+  onresult: (event: SpeechRecognitionEvent) => void;
+  onerror: (event: SpeechRecognitionErrorEvent) => void;
+  onend: () => void;
+}
+
+interface SpeechRecognitionEvent {
+  results: SpeechRecognitionResultList;
+  resultIndex: number;
+}
+
+interface SpeechRecognitionResultList {
+  length: number;
+  item: (index: number) => SpeechRecognitionResult;
+}
+
+interface SpeechRecognitionResult {
+  length: number;
+  item: (index: number) => SpeechRecognitionAlternative;
+  isFinal: boolean;
+}
+
+interface SpeechRecognitionAlternative {
+  transcript: string;
+  confidence: number;
+}
+
+interface SpeechRecognitionErrorEvent extends Event {
+  error: string;
+  message: string;
+}
+
+// Add SpeechRecognition global types
+declare global {
+  interface Window {
+    SpeechRecognition: new () => SpeechRecognition;
+    webkitSpeechRecognition: new () => SpeechRecognition;
+  }
+}
 
 interface PromptInputProps {
   placeholder?: string;
@@ -78,6 +125,9 @@ export default function PromptInput({
   );
 
   const [systemPromptOpen, setSystemPromptOpen] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const [interimTranscript, setInterimTranscript] = useState("");
 
   const [toolMentionItems, setToolMentionItems] = useState<
     { id: string; label: ReactNode; [key: string]: any }[]
@@ -110,6 +160,79 @@ export default function PromptInput({
         ]) ?? []
     );
   }, [mcpList]);
+
+  // Initialize speech recognition
+  useEffect(() => {
+    // Check if browser supports SpeechRecognition
+    if (typeof window !== 'undefined') {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      
+      if (SpeechRecognition) {
+        const recognition = new SpeechRecognition();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = 'en-US';
+        
+        recognition.onresult = (event) => {
+          let finalTranscript = '';
+          let interimTranscript = '';
+          
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            const transcript = event.results[i][0].transcript;
+            
+            if (event.results[i].isFinal) {
+              finalTranscript += transcript;
+            } else {
+              interimTranscript += transcript;
+            }
+          }
+          
+          if (finalTranscript) {
+            setInput(input + finalTranscript + ' ');
+          }
+          
+          setInterimTranscript(interimTranscript);
+        };
+        
+        recognition.onerror = (event) => {
+          console.error('Speech recognition error', event.error);
+          if (event.error === 'not-allowed') {
+            toast("Microphone access denied. Please allow microphone access to use voice input.");
+          }
+          setIsRecording(false);
+        };
+        
+        recognition.onend = () => {
+          setIsRecording(false);
+          setInterimTranscript("");
+        };
+        
+        recognitionRef.current = recognition;
+      }
+    }
+    
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+    };
+  }, [setInput, input]);
+
+  // Toggle speech recognition
+  const toggleSpeechRecognition = () => {
+    if (!recognitionRef.current) {
+      toast("Speech recognition is not supported in your browser.");
+      return;
+    }
+    
+    if (isRecording) {
+      recognitionRef.current.stop();
+    } else {
+      setInterimTranscript("");
+      recognitionRef.current.start();
+      setIsRecording(true);
+    }
+  };
 
   // Handle file upload button click
   const handleUploadClick = () => {
@@ -346,6 +469,11 @@ export default function PromptInput({
                   onPaste={handlePaste}
                   items={toolList}
                 />
+                {interimTranscript && (
+                  <div className="text-sm text-muted-foreground italic mt-1">
+                    {interimTranscript}
+                  </div>
+                )}
               </div>
               <div className="flex w-full items-center gap-2">
                 {pastedContents.map((content, index) => (
@@ -381,6 +509,16 @@ export default function PromptInput({
                   onClick={() => setSystemPromptOpen(true)}
                 >
                   <Settings2 className={`size-4 ${files && files.length > 0 ? "text-primary" : ""}`} />
+                </div>
+                <div
+                  className={`cursor-pointer text-muted-foreground border rounded-full p-2 bg-transparent hover:bg-muted transition-all duration-200 ${isRecording ? 'bg-red-100 dark:bg-red-900/30' : ''}`}
+                  onClick={toggleSpeechRecognition}
+                >
+                  {isRecording ? (
+                    <MicOff className="size-4 text-red-500" />
+                  ) : (
+                    <Mic className="size-4" />
+                  )}
                 </div>
                 <SystemMessagePopup 
                   isOpen={systemPromptOpen} 

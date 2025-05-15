@@ -221,7 +221,17 @@ export async function POST(request: Request) {
     });
   } catch (error: any) {
     logger.error(error);
-    return new Response(error.message || "Oops, an error occured!", {
+    
+    // Format user-friendly error messages for specific errors
+    let errorMessage = "Oops, an error occurred!";
+    
+    if (error.message && error.message.includes("Invalid 'tools': array too long")) {
+      errorMessage = "I'm currently equipped with too many tools to process your request. Please try a more specific query or contact your administrator to optimize the tool configuration.";
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+    
+    return new Response(errorMessage, {
       status: 500,
     });
   }

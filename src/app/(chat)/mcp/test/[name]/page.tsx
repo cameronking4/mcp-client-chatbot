@@ -386,7 +386,7 @@ export default function Page() {
   // Create a specific test ID for this server
   const testId = useMemo(() => `test-${name}-${nanoid(6)}`, [name]);
 
-  const { data: client, isLoading, error: clientError } = useSWR(`/mcp/${name}`, 
+  const { data: client, isLoading } = useSWR(`/mcp/${name}`, 
     async () => {
       try {
         return await selectMcpClientAction(name as string);

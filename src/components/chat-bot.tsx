@@ -89,7 +89,18 @@ export default function ChatBot({ threadId, initialMessages, slots }: Props) {
       }
     },
     onError: (error) => {
-      toast.error(error.message || "An error occured, please try again!");
+      toast.error(error.message || "An error occurred, please try again!");
+      
+      if (error.message && error.message.includes("too many tools")) {
+        setMessages([
+          ...messages,
+          {
+            id: generateUUID(),
+            role: "assistant",
+            content: "I'm currently equipped with too many tools to process your request. Please try a more specific query or contact your administrator to optimize the tool configuration.",
+          }
+        ]);
+      }
     },
   });
 

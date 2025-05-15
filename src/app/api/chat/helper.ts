@@ -96,7 +96,13 @@ export function manualToolExecuteByLastMessage(
 
 export function handleError(error: any) {
   logger.error(error);
-  return "Oops, an error occured!";
+  
+  // Check for the specific tools array too long error
+  if (error.message && error.message.includes("Invalid 'tools': array too long")) {
+    return "I'm currently equipped with too many tools to process your request. Please try a more specific query or contact your administrator to optimize the tool configuration.";
+  }
+  
+  return "Oops, an error occurred!";
 }
 
 export function convertToMessage(message: ChatMessage): Message {

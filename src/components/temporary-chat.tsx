@@ -47,8 +47,20 @@ export default function TemporaryChat({ children }: PropsWithChildren) {
       model,
       systemPrompt,
     },
-    onError: () => {
-      toast.error("An error occured, please try again!");
+    onError: (error) => {
+      toast.error("An error occurred, please try again!");
+      
+      // Also append the error message to the chat as a system message for specific errors
+      if (error.message && error.message.includes("too many tools")) {
+        setMessages([
+          ...messages,
+          {
+            id: Date.now().toString(),
+            role: "assistant",
+            content: "I'm currently equipped with too many tools to process your request. Please try a more specific query or contact your administrator to optimize the tool configuration.",
+          }
+        ]);
+      }
     },
   });
 
