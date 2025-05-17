@@ -18,6 +18,20 @@ import { azureImportFileTool } from "./azure-import-file";
 import { createDownloadableFileTool } from "./create-downloadable-file";
 // Memory tools
 import { memorySetTool, memoryGetTool, memoryDeleteTool, memoryListTool } from "./memory-tools";
+// Azure DevOps Work Item tools
+import { azureDevOpsGetWorkItemTool } from "./azure-devops-get-work-item";
+import { azureDevOpsUpdateWorkItemTool } from "./azure-devops-update-work-item";
+import { azureDevOpsCreateWorkItemTool } from "./azure-devops-create-work-item";
+import { azureDevOpsQueryWorkItemsTool } from "./azure-devops-query-work-items";
+import { azureDevOpsListWorkItemQueriesTool } from "./azure-devops-list-work-item-queries";
+import { azureDevOpsCreateWorkItemQueryTool } from "./azure-devops-create-work-item-query";
+import { azureDevOpsRunSavedQueryTool } from "./azure-devops-run-saved-query";
+// Azure DevOps Repository tools
+import { azureDevOpsCreateBranchTool } from "./azure-devops-create-branch";
+import { azureDevOpsCommitChangesTool } from "./azure-devops-commit-changes";
+import { azureDevOpsCreatePRTool } from "./azure-devops-create-pr";
+import { azureDevOpsListFilesTool } from "./azure-devops-list-files";
+import { azureDevOpsReadFileTool } from "./azure-devops-read-file";
 import { DefaultToolName } from "./utils";
 
 export const defaultTools = {
@@ -44,4 +58,18 @@ export const defaultTools = {
   [DefaultToolName.MemoryGet]: memoryGetTool,
   [DefaultToolName.MemoryDelete]: memoryDeleteTool,
   [DefaultToolName.MemoryList]: memoryListTool,
+  // Azure DevOps Work Item tools
+  [DefaultToolName.AzureDevOpsGetWorkItem]: azureDevOpsGetWorkItemTool,
+  [DefaultToolName.AzureDevOpsUpdateWorkItem]: azureDevOpsUpdateWorkItemTool,
+  [DefaultToolName.AzureDevOpsCreateWorkItem]: azureDevOpsCreateWorkItemTool,
+  [DefaultToolName.AzureDevOpsQueryWorkItems]: azureDevOpsQueryWorkItemsTool,
+  [DefaultToolName.AzureDevOpsListWorkItemQueries]: azureDevOpsListWorkItemQueriesTool,
+  [DefaultToolName.AzureDevOpsCreateWorkItemQuery]: azureDevOpsCreateWorkItemQueryTool,
+  [DefaultToolName.AzureDevOpsRunSavedQuery]: azureDevOpsRunSavedQueryTool,
+  // Azure DevOps Repository tools
+  [DefaultToolName.AzureDevOpsCreateBranch]: azureDevOpsCreateBranchTool,
+  [DefaultToolName.AzureDevOpsCommitChanges]: azureDevOpsCommitChangesTool,
+  [DefaultToolName.AzureDevOpsCreatePR]: azureDevOpsCreatePRTool,
+  [DefaultToolName.AzureDevOpsListFiles]: azureDevOpsListFilesTool,
+  [DefaultToolName.AzureDevOpsReadFile]: azureDevOpsReadFileTool,
 };

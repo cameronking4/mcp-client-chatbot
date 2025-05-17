@@ -22,4 +22,18 @@ export enum DefaultToolName {
   MemoryGet = "memoryGet",
   MemoryDelete = "memoryDelete",
   MemoryList = "memoryList",
+  // Azure DevOps Work Item Tools
+  AzureDevOpsGetWorkItem = "azureDevOpsGetWorkItem",
+  AzureDevOpsUpdateWorkItem = "azureDevOpsUpdateWorkItem",
+  AzureDevOpsCreateWorkItem = "azureDevOpsCreateWorkItem",
+  AzureDevOpsQueryWorkItems = "azureDevOpsQueryWorkItems",
+  AzureDevOpsListWorkItemQueries = "azureDevOpsListWorkItemQueries",
+  AzureDevOpsCreateWorkItemQuery = "azureDevOpsCreateWorkItemQuery",
+  AzureDevOpsRunSavedQuery = "azureDevOpsRunSavedQuery",
+  // Azure DevOps Repository Tools
+  AzureDevOpsCreateBranch = "azureDevOpsCreateBranch",
+  AzureDevOpsCommitChanges = "azureDevOpsCommitChanges",
+  AzureDevOpsCreatePR = "azureDevOpsCreatePR",
+  AzureDevOpsListFiles = "azureDevOpsListFiles",
+  AzureDevOpsReadFile = "azureDevOpsReadFile",
 }
