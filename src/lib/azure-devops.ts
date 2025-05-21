@@ -147,7 +147,6 @@ export interface GitPush {
 
 export class AzureDevOpsClient {
   private pat: string;
-  private organization: string;
   private project: string;
   private apiVersion: string;
   private baseUrl: string;
@@ -159,7 +158,6 @@ export class AzureDevOpsClient {
     apiVersion: string = '6.0'  // Changed to 6.0 which is more widely supported
   ) {
     this.pat = pat;
-    this.organization = organization;
     this.project = project;
     this.apiVersion = apiVersion;
     this.baseUrl = `https://dev.azure.com/${organization}/${project}/_apis`;
