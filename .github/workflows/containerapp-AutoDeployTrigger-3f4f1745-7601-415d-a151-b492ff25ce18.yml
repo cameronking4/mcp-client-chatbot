@@ -1,0 +1,48 @@
+name: Trigger auto deployment for containerapp
+
+# When this action will be executed
+on:
+  # Automatically trigger it when detected changes in repo
+  push:
+    branches: 
+      [ chat-rendering ]
+    paths:
+    - '**'
+    - '.github/workflows/containerapp-AutoDeployTrigger-3f4f1745-7601-415d-a151-b492ff25ce18.yml'
+
+  # Allow manual trigger 
+  workflow_dispatch:      
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions: 
+      id-token: write #This is required for requesting the OIDC JWT Token
+      contents: read #Required when GH token is used to authenticate with private repo
+
+    steps:
+      - name: Checkout to the branch
+        uses: actions/checkout@v2
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          client-id: ${{ secrets.CONTAINERAPP_AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.CONTAINERAPP_AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.CONTAINERAPP_AZURE_SUBSCRIPTION_ID }}
+
+      - name: Build and push container image to registry
+        uses: azure/container-apps-deploy-action@v2
+        with:
+          appSourcePath: ${{ github.workspace }}
+          _dockerfilePathKey_: _dockerfilePath_
+          registryUrl: docker.io
+          registryUsername: ${{ secrets.CONTAINERAPP_REGISTRY_USERNAME }}
+          registryPassword: ${{ secrets.CONTAINERAPP_REGISTRY_PASSWORD }}
+          containerAppName: containerapp
+          resourceGroup: mcp-chatbot-rg
+          imageToBuild: mcpworkbench/containerapp:${{ github.sha }}
+          _buildArgumentsKey_: |
+            _buildArgumentsValues_
+
+
